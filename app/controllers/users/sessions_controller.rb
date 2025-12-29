@@ -1,15 +1,20 @@
 # This controller handles user session management (login and logout) for the API.
 # It inherits from Devise's SessionsController to leverage its core authentication
 # and session handling logic, while overriding key behaviors to be API-specific.
-class SessionsController < Devise::SessionsController
-  skip_before_action :verify_authenticity_token, only: [ :create, :destroy ], raise: false
-  before_action :force_json, only: [:create, :destroy]
+class Users::SessionsController < Devise::SessionsController
+  # Include shared methods, like error handling, from the `Users::SharedDeviseMethods` module.
+  include Users::SharedDeviseMethods
+
+  # Skips the `set_tenant` before_action for the `create` and `destroy` actions.
+  # This is necessary because these actions occur before a `current_user` is
+  # available to determine the correct tenant, which would otherwise lead to an error.
+  skip_before_action :set_tenant, only: [ :create, :destroy ]
+  before_action :force_json
 
   # Overrides the default `create` action to provide a custom, API-friendly JSON response
   # for both successful and failed login attempts. This approach avoids Devise's
   # default HTML redirection behavior.
   def create
-    params.require(:user).permit(:email, :password)
     # Authenticates the user using Warden, the middleware Devise is built on.
     # The `warden.authenticate` method (without the bang `!`) returns the authenticated
     # user object on success and `nil` or `false` on failure, preventing
@@ -21,17 +26,20 @@ class SessionsController < Devise::SessionsController
       # --- Successful Login Path ---
       # The `resource` variable now holds the authenticated user object.
 
-      sign_in(resource_name, resource)
+      # Sets the `ActsAsTenant` context for the current request to the user's firm.
+      # This is the single point in the authentication flow where the tenant is set.
+      ActsAsTenant.current_tenant = resource.firm
 
-      render json: {
+       # Renders a success message with the user's data using the `UserBlueprint`.
+       # The `session_view` is specified to ensure only relevant data is included
+       # and to prevent a circular dependency with other blueprints.
+       user_data = {
         message: "Logged in successfully.",
-        data: {
-          id: resource.id,
-          email: resource.email,
-          first_name: resource.first_name,
-          last_name: resource.last_name
-        }
-      }, status: :ok
+
+        data: UserBlueprint.render_as_hash(resource, view: :session_view)
+      }
+
+      render json: user_data, status: :ok
     else
       # --- Failed Login Path ---
       # This block is executed if `warden.authenticate` returns a falsy value.

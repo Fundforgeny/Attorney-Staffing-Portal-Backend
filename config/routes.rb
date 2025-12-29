@@ -5,8 +5,16 @@ Rails.application.routes.draw do
   # Can be used by load balancers and uptime monitors to verify that the app is live.
   get "up" => "rails/health#show", as: :rails_health_check
 
+  root "home#index"
+
+  ActiveAdmin.routes(self)
+
+  get "/super_admin/sign_in", to: "super_admin/sessions#new", as: :super_admin_sign_in
+  post "/super_admin/sign_in", to: "super_admin/sessions#create"
+  delete "/super_admin/sign_out", to: "super_admin/sessions#destroy", as: :super_admin_sign_out
+
   devise_for :users, controllers: {
-    registrations: 'users/registrations'
+    sessions: "sessions"
   }
 
   # Render dynamic PWA files from app/views/pwa/* (remember to link manifest in application.html.erb)

@@ -24,7 +24,6 @@ gem "stimulus-rails"
 # Bundle and process CSS [https://github.com/rails/cssbundling-rails]
 gem "cssbundling-rails"
 # Sass compiler for Rails
-gem "sassc-rails"
 
 # =============================================================================
 # API and Data
@@ -95,6 +94,7 @@ gem "aws-sdk-s3"
 gem "active_storage_validations"
 gem "liquid"
 gem "font_awesome_icons_list"
+gem "paper_trail", "~> 15.2"
 
 # =============================================================================
 # Development and Testing
