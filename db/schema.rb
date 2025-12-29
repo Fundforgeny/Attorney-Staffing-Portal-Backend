@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_12_25_101000) do
+ActiveRecord::Schema[8.0].define(version: 2025_12_29_104501) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -150,6 +150,52 @@ ActiveRecord::Schema[8.0].define(version: 2025_12_25_101000) do
     t.index ["jti"], name: "index_jwt_denylists_on_jti"
   end
 
+  create_table "payment_methods", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.string "provider", default: "stripe"
+    t.string "stripe_payment_method_id"
+    t.string "vault_token"
+    t.string "last4"
+    t.string "card_brand"
+    t.integer "exp_month"
+    t.integer "exp_year"
+    t.string "cardholder_name"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["stripe_payment_method_id"], name: "index_payment_methods_on_stripe_payment_method_id", unique: true
+    t.index ["user_id"], name: "index_payment_methods_on_user_id"
+  end
+
+  create_table "payments", force: :cascade do |t|
+    t.bigint "plan_id"
+    t.bigint "user_id", null: false
+    t.bigint "payment_method_id", null: false
+    t.integer "payment_type", default: 0
+    t.decimal "payment_amount", precision: 10, scale: 2
+    t.integer "status", default: 0
+    t.string "stripe_charge_id"
+    t.datetime "scheduled_at"
+    t.datetime "paid_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["payment_method_id"], name: "index_payments_on_payment_method_id"
+    t.index ["plan_id"], name: "index_payments_on_plan_id"
+    t.index ["user_id"], name: "index_payments_on_user_id"
+  end
+
+  create_table "plans", force: :cascade do |t|
+    t.string "name", null: false
+    t.integer "duration"
+    t.decimal "total_payment", precision: 10, scale: 2, null: false
+    t.decimal "total_interest_amount", precision: 10, scale: 2
+    t.decimal "monthly_payment", precision: 10, scale: 2, null: false
+    t.decimal "monthly_interest_amount", precision: 10, scale: 2
+    t.decimal "down_payment", precision: 10, scale: 2, null: false
+    t.integer "status", default: 0
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+  end
+
   create_table "users", force: :cascade do |t|
     t.string "encrypted_password", default: "", null: false
     t.string "reset_password_token"
@@ -179,6 +225,7 @@ ActiveRecord::Schema[8.0].define(version: 2025_12_25_101000) do
     t.boolean "is_verfied", default: true
     t.integer "annual_salary"
     t.integer "user_type", default: 0, null: false
+    t.integer "payment_method_id"
     t.index ["user_type"], name: "index_users_on_user_type"
   end
 
@@ -193,4 +240,8 @@ ActiveRecord::Schema[8.0].define(version: 2025_12_25_101000) do
   add_foreign_key "client_profiles", "users"
   add_foreign_key "firm_users", "firms"
   add_foreign_key "firm_users", "users"
+  add_foreign_key "payment_methods", "users"
+  add_foreign_key "payments", "payment_methods"
+  add_foreign_key "payments", "plans"
+  add_foreign_key "payments", "users"
 end

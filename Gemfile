@@ -7,6 +7,9 @@ gem "sprockets-rails"
 # Use postgresql as the database for Active Record
 gem "pg", "~> 1.6"
 
+# Use Active Record 7.1 features
+gem 'activerecord', '~> 8.0.0'
+
 # Use the Puma web server [https://github.com/puma/puma]
 gem "puma", ">= 5.0"
 # Reduces boot times through caching; required in config/boot.rb
@@ -36,6 +39,9 @@ gem "image_processing", "~> 1.2"
 
 # Use Redis adapter to run Action Cable in production
 gem "redis", ">= 4.0.1"
+
+# Use stripe for payment processing 
+gem 'stripe'
 
 # Use Kredis to get higher-level data types in Redis [https://github.com/rails/kredis]
 # gem "kredis"
