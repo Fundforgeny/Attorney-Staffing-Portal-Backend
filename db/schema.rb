@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2025_12_29_104501) do
+ActiveRecord::Schema[8.0].define(version: 2026_01_01_105308) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -173,11 +173,13 @@ ActiveRecord::Schema[8.0].define(version: 2025_12_29_104501) do
     t.integer "payment_type", default: 0
     t.decimal "payment_amount", precision: 10, scale: 2
     t.integer "status", default: 0
-    t.string "stripe_charge_id"
+    t.string "charge_id"
     t.datetime "scheduled_at"
     t.datetime "paid_at"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.decimal "total_payment_including_fee"
+    t.decimal "transaction_fee"
     t.index ["payment_method_id"], name: "index_payments_on_payment_method_id"
     t.index ["plan_id"], name: "index_payments_on_plan_id"
     t.index ["user_id"], name: "index_payments_on_user_id"
@@ -194,6 +196,8 @@ ActiveRecord::Schema[8.0].define(version: 2025_12_29_104501) do
     t.integer "status", default: 0
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "user_id", null: false
+    t.index ["user_id"], name: "index_plans_on_user_id"
   end
 
   create_table "users", force: :cascade do |t|
@@ -244,4 +248,5 @@ ActiveRecord::Schema[8.0].define(version: 2025_12_29_104501) do
   add_foreign_key "payments", "payment_methods"
   add_foreign_key "payments", "plans"
   add_foreign_key "payments", "users"
+  add_foreign_key "plans", "users"
 end

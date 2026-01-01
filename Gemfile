@@ -27,7 +27,7 @@ gem "stimulus-rails"
 # Bundle and process CSS [https://github.com/rails/cssbundling-rails]
 gem "cssbundling-rails"
 # Sass compiler for Rails
-
+gem "sassc-rails"
 # =============================================================================
 # API and Data
 # =============================================================================
@@ -42,6 +42,12 @@ gem "redis", ">= 4.0.1"
 
 # Use stripe for payment processing 
 gem 'stripe'
+
+# Use square for payment processing
+gem "square.rb"
+
+# Evervault for data encryption and security
+gem 'evervault'
 
 # Use Kredis to get higher-level data types in Redis [https://github.com/rails/kredis]
 # gem "kredis"
@@ -120,6 +126,9 @@ group :development, :test do
 
   # Opens sent emails in the browser instead of sending them
   gem "letter_opener", "~> 1.10"
+
+  # pry
+  gem "pry"
 end
 
 group :development do
