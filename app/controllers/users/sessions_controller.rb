@@ -2,10 +2,7 @@
 # It inherits from Devise's SessionsController to leverage its core authentication
 # and session handling logic, while overriding key behaviors to be API-specific.
 class Users::SessionsController < Devise::SessionsController
-  # Include shared methods, like error handling, from the `Users::SharedDeviseMethods` module.
-  include Users::SharedDeviseMethods
-
-  # Skips the `set_tenant` before_action for the `create` and `destroy` actions.
+  # Skips the `set_tenant` before_action for `create` and `destroy` actions.
   # This is necessary because these actions occur before a `current_user` is
   # available to determine the correct tenant, which would otherwise lead to an error.
   skip_before_action :set_tenant, only: [ :create, :destroy ]
