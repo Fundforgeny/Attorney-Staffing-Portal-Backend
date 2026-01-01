@@ -8,7 +8,6 @@ gem "sprockets-rails"
 gem "pg", "~> 1.6"
 
 # Use Active Record 7.1 features
-gem 'activerecord', '~> 8.0.0'
 
 # Use the Puma web server [https://github.com/puma/puma]
 gem "puma", ">= 5.0"
@@ -106,7 +105,6 @@ gem "aws-sdk-s3"
 gem "active_storage_validations"
 gem "liquid"
 gem "font_awesome_icons_list"
-gem "paper_trail", "~> 15.2"
 
 # =============================================================================
 # Development and Testing
