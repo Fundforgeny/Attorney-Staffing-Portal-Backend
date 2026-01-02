@@ -9,8 +9,8 @@ class Api::V1::PaymentsController < ActionController::API
       plan = create_plan_instance(user)
       payments = create_payment_schedule(plan, payment_method)
 
-      # result = StripePaymentService.new(payments)
-      result = SquarePaymentService.new(payments)
+      result = StripePaymentService.new(payments)
+      # result = SquarePaymentService.new(payments)
 
       render_success(
         data: {
