@@ -3,6 +3,7 @@
 # and session handling logic, while overriding key behaviors to be API-specific.
 class Users::SessionsController < Devise::SessionsController
   before_action :force_json
+  include Users::SharedDeviseMethods
 
   # Overrides the default `create` action to provide a custom, API-friendly JSON response
   # for both successful and failed login attempts. This approach avoids Devise's
@@ -18,11 +19,11 @@ class Users::SessionsController < Devise::SessionsController
     if resource
       # --- Successful Login Path ---
       # The `resource` variable now holds the authenticated user object.
-
+      ActsAsTenant.current_tenant = resource.firm
        # Renders a success message with the user's data using the `UserBlueprint`.
        # The `session_view` is specified to ensure only relevant data is included
        # and to prevent a circular dependency with other blueprints.
-       user_data = {
+      user_data = {
         message: "Logged in successfully.",
 
         data: UserBlueprint.render_as_hash(resource, view: :session_view)
