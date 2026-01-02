@@ -2,10 +2,6 @@
 # It inherits from Devise's SessionsController to leverage its core authentication
 # and session handling logic, while overriding key behaviors to be API-specific.
 class Users::SessionsController < Devise::SessionsController
-  # Skips the `set_tenant` before_action for `create` and `destroy` actions.
-  # This is necessary because these actions occur before a `current_user` is
-  # available to determine the correct tenant, which would otherwise lead to an error.
-  skip_before_action :set_tenant, only: [ :create, :destroy ]
   before_action :force_json
 
   # Overrides the default `create` action to provide a custom, API-friendly JSON response
@@ -22,10 +18,6 @@ class Users::SessionsController < Devise::SessionsController
     if resource
       # --- Successful Login Path ---
       # The `resource` variable now holds the authenticated user object.
-
-      # Sets the `ActsAsTenant` context for the current request to the user's firm.
-      # This is the single point in the authentication flow where the tenant is set.
-      ActsAsTenant.current_tenant = resource.firm
 
        # Renders a success message with the user's data using the `UserBlueprint`.
        # The `session_view` is specified to ensure only relevant data is included
