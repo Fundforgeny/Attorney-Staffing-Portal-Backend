@@ -1,15 +1,15 @@
-# This controller handles user session management (login and logout) for the API.
+# This controller handles user session management (login and logout) for API.
 # It inherits from Devise's SessionsController to leverage its core authentication
 # and session handling logic, while overriding key behaviors to be API-specific.
 class Users::SessionsController < Devise::SessionsController
   before_action :force_json
-  include Users::SharedDeviseMethods
+  include SharedDeviseMethods
 
   # Overrides the default `create` action to provide a custom, API-friendly JSON response
   # for both successful and failed login attempts. This approach avoids Devise's
   # default HTML redirection behavior.
   def create
-    # Authenticates the user using Warden, the middleware Devise is built on.
+    # Authenticates user using Warden, the middleware Devise is built on.
     # The `warden.authenticate` method (without the bang `!`) returns the authenticated
     # user object on success and `nil` or `false` on failure, preventing
     # automatic redirects to the login page.
@@ -33,13 +33,8 @@ class Users::SessionsController < Devise::SessionsController
     else
       # --- Failed Login Path ---
       # This block is executed if `warden.authenticate` returns a falsy value.
-      # It covers all authentication failures, including incorrect password,
-      # non-existent email, or an unconfirmed user account.
-
-      # Renders a generic `unauthorized` error response. A generic message is
-      # a security best practice to prevent an attacker from knowing which part
-      # of the authentication (e.g., email or password) was incorrect.
-      render json: { error: "Invalid email or password." }, status: :unauthorized
+      # Use the standardized helper for a consistent error response.
+      render_resource_errors(resource)
     end
 
   # Rescues from `ActionController::ParameterMissing` errors, which are raised
