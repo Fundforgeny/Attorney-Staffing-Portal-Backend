@@ -1,4 +1,4 @@
-module Users::SharedDeviseMethods
+module SharedDeviseMethods
   extend ActiveSupport::Concern
 
   included do

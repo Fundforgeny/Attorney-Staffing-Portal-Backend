@@ -3,5 +3,5 @@
 #
 # Note: The SessionsController does NOT inherit from this class.
 class Users::BaseDeviseController < DeviseController
-  include Users::SharedDeviseMethods
+  include SharedDeviseMethods
 end
