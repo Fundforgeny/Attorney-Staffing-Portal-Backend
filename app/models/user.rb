@@ -19,6 +19,15 @@ class User < ApplicationRecord
   # Validations
   validates :email, presence: true, uniqueness: true
 
+  # Define which attributes are searchable by Ransack
+  def self.ransackable_attributes(auth_object = nil)
+    ["address_street", "annual_salary", "city", "confirmation_sent_at", "confirmation_token", "confirmed_at", "contact_source", "country", "current_sign_in_at", "current_sign_in_ip", "dob", "email", "encrypted_password", "first_name", "id", "id_value", "is_verfied", "last_name", "last_sign_in_at", "last_sign_in_ip", "payment_method_id", "phone", "postal_code", "remember_created_at", "reset_password_sent_at", "reset_password_token", "sign_in_count", "state", "time_zone", "unconfirmed_email", "user_type", "verification_status"]
+  end
+
+  # Define which associations are searchable by Ransack
+  def self.ransackable_associations(auth_object = nil)
+    ["attorney_profile", "client_profile", "firm_users", "firms", "payment_method"]
+  end
 
   def full_name
     "#{first_name} #{last_name}".strip.presence || email
@@ -42,5 +51,10 @@ class User < ApplicationRecord
 
   def profile
     attorney_profile || client_profile
+  end
+
+  # Get the primary firm (first associated firm)
+  def primary_firm
+    firms.first
   end
 end
