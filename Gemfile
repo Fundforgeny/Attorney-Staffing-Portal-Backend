@@ -101,6 +101,7 @@ gem "kaminari"
 gem "tzinfo-data", platforms: %i[ windows jruby ]
 
 gem "aws-sdk-s3"
+gem 'pdf-forms'
 
 gem "active_storage_validations"
 gem "liquid"

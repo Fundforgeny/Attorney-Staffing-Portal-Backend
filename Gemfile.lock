@@ -163,6 +163,7 @@ GEM
     certifi (2018.01.18)
     childprocess (5.1.0)
       logger (~> 1.5)
+    cliver (0.3.2)
     coderay (1.1.3)
     concurrent-ruby (1.3.6)
     connection_pool (3.0.2)
@@ -212,7 +213,7 @@ GEM
       logger
     faraday-follow_redirects (0.5.0)
       faraday (>= 1, < 3)
-    faraday-gzip (3.0.4)
+    faraday-gzip (3.1.0)
       faraday (>= 2.0, < 3)
       zlib (~> 3.0)
     faraday-http-cache (2.5.1)
@@ -359,6 +360,10 @@ GEM
     parser (3.3.10.0)
       ast (~> 2.4.1)
       racc
+    pdf-forms (1.5.2)
+      cliver (~> 0.3.2)
+      rexml (~> 3.2, >= 3.2.6)
+      safe_shell (>= 1.0.3, < 2.0)
     pg (1.6.3)
     pg (1.6.3-aarch64-linux)
     pg (1.6.3-aarch64-linux-musl)
@@ -376,7 +381,7 @@ GEM
     psych (5.3.1)
       date
       stringio
-    public_suffix (7.0.0)
+    public_suffix (7.0.2)
     puma (7.1.0)
       nio4r (~> 2.0)
     pundit (2.5.2)
@@ -463,7 +468,7 @@ GEM
       lint_roller (~> 1.1)
       rubocop (>= 1.75.0, < 2.0)
       rubocop-ast (>= 1.47.1, < 2.0)
-    rubocop-rails (2.34.2)
+    rubocop-rails (2.34.3)
       activesupport (>= 4.2.0)
       lint_roller (~> 1.1)
       rack (>= 1.1)
@@ -479,6 +484,7 @@ GEM
       logger
     ruby2_keywords (0.0.5)
     rubyzip (3.2.2)
+    safe_shell (1.1.0)
     sassc (2.4.0)
       ffi (~> 1.9)
     sassc-rails (2.1.2)
@@ -595,6 +601,7 @@ DEPENDENCIES
   liquid
   minitest-reporters
   mocha
+  pdf-forms
   pg (~> 1.6)
   phonelib
   pry

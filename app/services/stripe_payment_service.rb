@@ -25,7 +25,6 @@ class StripePaymentService
 
   def payload
     vault_token = @down_payment.payment_method.vault_token
-    binding.pry
     {
       amount: @down_payment.total_payment_including_fee.to_i,
       currency: "usd",

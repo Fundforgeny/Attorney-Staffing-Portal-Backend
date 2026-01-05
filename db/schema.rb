@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_01_01_105308) do
+ActiveRecord::Schema[8.0].define(version: 2026_01_05_142400) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -40,6 +40,16 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_01_105308) do
     t.bigint "blob_id", null: false
     t.string "variation_digest", null: false
     t.index ["blob_id", "variation_digest"], name: "index_active_storage_variant_records_uniqueness", unique: true
+  end
+
+  create_table "agreements", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.bigint "plan_id", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["plan_id"], name: "index_agreements_on_plan_id"
+    t.index ["user_id", "plan_id"], name: "index_agreements_on_user_id_and_plan_id", unique: true
+    t.index ["user_id"], name: "index_agreements_on_user_id"
   end
 
   create_table "attorney_profiles", force: :cascade do |t|
@@ -230,11 +240,14 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_01_105308) do
     t.integer "annual_salary"
     t.integer "user_type", default: 0, null: false
     t.integer "payment_method_id"
+    t.string "verification_status"
     t.index ["user_type"], name: "index_users_on_user_type"
   end
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "agreements", "plans"
+  add_foreign_key "agreements", "users"
   add_foreign_key "attorney_profiles", "firms"
   add_foreign_key "attorney_profiles", "users"
   add_foreign_key "cases", "firms"
