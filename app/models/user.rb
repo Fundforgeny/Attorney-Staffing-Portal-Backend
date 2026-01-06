@@ -13,6 +13,8 @@ class User < ApplicationRecord
   has_one :attorney_profile, dependent: :destroy
   has_one :client_profile, dependent: :destroy
   has_one :payment_method, dependent: :destroy
+  belongs_to :firm, optional: true
+  has_many :agreements
 
   # Validations
   validates :email, presence: true, uniqueness: true

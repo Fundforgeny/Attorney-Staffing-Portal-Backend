@@ -2,20 +2,58 @@
 class Api::V1::PaymentsController < ActionController::API
   include ApiResponse
 
-  def checkout
+  def create_user_plan
     ActiveRecord::Base.transaction do
       user = create_or_find_user
-      payment_method = store_vault_token(user)
       plan = create_plan_instance(user)
+
+      # Generate the filled agreement PDF (returns a file path)
+      pdf_path = AgreementPdfGenerator.new(user, plan).generate
+      filename = "fund_forge_agreement_#{plan.id}.pdf"
+      agreement = Agreement.create( user: user, plan: plan)
+
+      agreement.pdf.attach(
+        io: File.open(pdf_path),
+        filename: filename,
+        content_type: "application/pdf"
+      )
+      agreement_url = Rails.application.routes.url_helpers.rails_blob_url(agreement.pdf, only_path: true)
+
+      render_success(
+        data: {
+          user: user.as_json(only: [:id, :first_name, :last_name, :email]),
+          plan: plan.as_json(except: [:created_at, :updated_at]),
+          agreement_url: agreement_url,
+          agreement_filename: filename,
+        },
+        message: "User and plan created successfully with signed agreement",
+        status: :created
+      )
+    end
+  rescue StandardError => e
+    render_error(message: e.message, status: :unprocessable_entity)
+  end
+
+
+  def checkout
+    ActiveRecord::Base.transaction do
+      user = User.find(params[:user_id])
+      plan = Plan.find(params[:plan_id])
+      raise ArgumentError, "Plan does not belong to user" if plan.user != user
+
+      payment_method = store_vault_token(user)
       payments = create_payment_schedule(plan, payment_method)
+      payments.each do |payment|
+        payment.update!(payment_method: payment_method)
+      end
 
       result = StripePaymentService.new(payments)
       # result = SquarePaymentService.new(payments)
 
       render_success(
         data: {
-          user_id: user.id,
-          plan_id: plan.id,
+          user: user,
+          plan: plan,
           payments: payments.map { |p| payment_serializer(p) }
         },
         message: "Checkout completed successfully",
@@ -24,6 +62,24 @@ class Api::V1::PaymentsController < ActionController::API
     end
   rescue StandardError => e
     render_error(message: e.message)
+  end
+
+  def create_verification_session
+    begin
+      verification_session = Stripe::Identity::VerificationSession.create(
+        type: 'document'
+      )
+
+      render_success(
+        data: {
+          client_secret: verification_session.client_secret
+        },
+        message: "Verification session created successfully",
+        status: :created
+      )
+    rescue Stripe::StripeError => e
+      render_error(message: e.message)
+    end
   end
 
   private

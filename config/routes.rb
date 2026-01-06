@@ -34,7 +34,10 @@ Rails.application.routes.draw do
   # config/routes.rb
   namespace :api do
     namespace :v1 do
+      post 'payments/create_user_plan', to: 'payments#create_user_plan'
       post 'payments/checkout', to: 'payments#checkout'
+      post 'payments/create_verification_session', to: 'payments#create_verification_session'
+      post '/stripe/webhooks', to: 'stripe_webhooks#create'
     end
   end
   # Render dynamic PWA files from app/views/pwa/* (remember to link manifest in application.html.erb)
