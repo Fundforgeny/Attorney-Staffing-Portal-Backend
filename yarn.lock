@@ -636,7 +636,7 @@ normalize-path@^3.0.0, normalize-path@~3.0.0:
   resolved "https://registry.yarnpkg.com/normalize-path/-/normalize-path-3.0.0.tgz#0dcd69ff23a1c9b11fd0978316644a0388216a65"
   integrity sha512-6eZs5Ls3WtCisHWp9S2GUy8dqkpGi4BVSz3GaqiE6ezub0512ESztXUwUB6C6IKbQkY2Pnb/mD4WYojCRwcwLA==
 
-pdftk@0.0.4:
+pdftk@^0.0.0-rc.0:
   version "0.0.0-rc.0"
   resolved "https://registry.yarnpkg.com/pdftk/-/pdftk-0.0.0-rc.0.tgz#04acf1e01fa10cb41c812dc43e2bc980b848f182"
   integrity sha512-FyyJvl9E0BPp3An8qAVgNfWTDGXU/yb8ewYtcYl79HsQ9j1TinwPz2S/LBgK4qmtFqA08sI+BXQXYGW0pjL+LQ==
@@ -743,9 +743,9 @@ require-directory@^2.1.1:
   integrity sha512-fGxEI7+wsG9xrvdjsrlmL22OMTTiHRwAMroiEeMgq8gzoLC/PQr7RsRDSTLUg/bZAZtF+TVIkHc6/4RIKrui+Q==
 
 sass@^1.97.1:
-  version "1.97.1"
-  resolved "https://registry.yarnpkg.com/sass/-/sass-1.97.1.tgz#f36e492baf8ccdd08d591b58d3d8b53ea35ab905"
-  integrity sha512-uf6HoO8fy6ClsrShvMgaKUn14f2EHQLQRtpsZZLeU/Mv0Q1K5P0+x2uvH6Cub39TVVbWNSrraUhDAoFph6vh0A==
+  version "1.97.2"
+  resolved "https://registry.yarnpkg.com/sass/-/sass-1.97.2.tgz#e515a319092fd2c3b015228e3094b40198bff0da"
+  integrity sha512-y5LWb0IlbO4e97Zr7c3mlpabcbBtS+ieiZ9iwDooShpFKWXf62zz5pEPdwrLYm+Bxn1fnbwFGzHuCLSA9tBmrw==
   dependencies:
     chokidar "^4.0.0"
     immutable "^5.0.2"

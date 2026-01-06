@@ -25,7 +25,7 @@
     "postcss-cli": "^11.0.1",
     "sass": "^1.97.1",
     "trix": "^2.1.15",
-    "pdftk": "0.0.4"
+    "pdftk": "^0.0.0-rc.0"
   },
   "browserslist": [
     "defaults"
