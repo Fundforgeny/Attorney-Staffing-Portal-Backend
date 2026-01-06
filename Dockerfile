@@ -27,6 +27,7 @@ RUN apt-get update -qq && \
       node-gyp \
       pkg-config \
       python-is-python3 && \
+      pdftk && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
 # Set production environment
@@ -62,8 +63,6 @@ RUN curl -sL https://github.com/nodenv/node-build/archive/master.tar.gz | tar xz
     /tmp/node-build-master/bin/node-build "${NODE_VERSION}" /usr/local/node && \
     npm install -g yarn@$YARN_VERSION && \
     rm -rf /tmp/node-build-master
-
-RUN apt-get update && apt-get install -y pdftk
 
 # Install application gems
 COPY Gemfile Gemfile.lock ./
