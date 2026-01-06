@@ -26,7 +26,7 @@ RUN apt-get update -qq && \
       libffi-dev \
       node-gyp \
       pkg-config \
-      python-is-python3 && \
+      python-is-python3 \
       pdftk && \
     rm -rf /var/lib/apt/lists /var/cache/apt/archives
 
