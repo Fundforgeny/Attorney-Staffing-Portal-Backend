@@ -63,6 +63,8 @@ RUN curl -sL https://github.com/nodenv/node-build/archive/master.tar.gz | tar xz
     npm install -g yarn@$YARN_VERSION && \
     rm -rf /tmp/node-build-master
 
+RUN apt-get update && apt-get install -y pdftk
+
 # Install application gems
 COPY Gemfile Gemfile.lock ./
 RUN bundle install && \
