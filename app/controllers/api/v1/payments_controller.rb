@@ -2,6 +2,9 @@
 class Api::V1::PaymentsController < ActionController::API
   include ApiResponse
 
+  # Allow iframe embedding for PDF URLs
+  after_action :set_iframe_headers, only: [:create_user_plan]
+
   def create_user_plan
     ActiveRecord::Base.transaction do
       user = create_or_find_user
@@ -263,5 +266,15 @@ class Api::V1::PaymentsController < ActionController::API
       paid_at: payment.paid_at,
       charge_id: payment.charge_id
     }
+  end
+
+  private
+
+  def set_iframe_headers
+    response.headers['X-Frame-Options'] = 'ALLOWALL'
+    response.headers['Content-Security-Policy'] = "frame-ancestors *"
+    response.headers['Access-Control-Allow-Origin'] = '*'
+    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
+    response.headers['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization, X-Frame-Options'
   end
 end
