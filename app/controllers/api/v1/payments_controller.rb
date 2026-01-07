@@ -66,10 +66,17 @@ class Api::V1::PaymentsController < ActionController::API
   end
 
   def create_verification_session
+    user = User.find_by(id: params[:user_id])
+    unless user
+      return render_error(message: "User not found", status: :not_found)
+    end
+
     begin
       verification_session = Stripe::Identity::VerificationSession.create(
         type: 'document'
       )
+      # Save the record in DB
+      user.update!(stripe_verification_session_id: verification_session.id)
 
       render_success(
         data: {
@@ -78,6 +85,7 @@ class Api::V1::PaymentsController < ActionController::API
         message: "Verification session created successfully",
         status: :created
       )
+
     rescue Stripe::StripeError => e
       render_error(message: e.message)
     end
