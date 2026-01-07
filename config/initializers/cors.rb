@@ -1,23 +1,14 @@
 Rails.application.config.middleware.insert_before 0, Rack::Cors do
   allow do
-    allowed_origins = case Rails.env
-    when "development"
-      [ "http://localhost:5173" ]
-    when "production", "staging"
-      [
-        "http://localhost:5173/",
-        "https://attorney-staffing-portal-frontend.onrender.com/",
-      ]
-    when "test"
-      [ "http://localhost:5173" ]
-    end
+    origins 'https://attorney-staffing-portal-frontend.onrender.com',
+            'http://localhost:5173',
+            'http://127.0.0.1:5173'
 
-    origins allowed_origins
-
-    resource "*",
+    resource '*',
              headers: :any,
-             methods: %i[ get post put patch delete options head ],
-             expose: [ "Authorization" ],
-             credentials: true
+             methods: %i[get post put patch delete options head]
+             # Optionally need to set below for the future API's that requires authorisation
+             # expose: ['Authorization', 'X-Frame-Options', 'Content-Disposition'],
+             # credentials: true
   end
 end
