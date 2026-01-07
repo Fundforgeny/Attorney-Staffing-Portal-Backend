@@ -21,8 +21,9 @@ class Api::V1::PaymentsController < ActionController::API
 
       render_success(
         data: {
-          user: user.as_json(only: [:id, :first_name, :last_name, :email]),
-          plan: plan.as_json(except: [:created_at, :updated_at]),
+          user_id: user.id,
+          plan_id: plan.id,
+          agreement_id: agreement.id,
           agreement_url: agreement_url,
           agreement_filename: filename,
         },
@@ -43,17 +44,14 @@ class Api::V1::PaymentsController < ActionController::API
 
       payment_method = store_vault_token(user)
       payments = create_payment_schedule(plan, payment_method)
-      payments.each do |payment|
-        payment.update!(payment_method: payment_method)
-      end
 
-      result = StripePaymentService.new(payments)
+      # result = StripePaymentService.new(payments)
       # result = SquarePaymentService.new(payments)
 
       render_success(
         data: {
-          user: user,
-          plan: plan,
+          user_id: user.id,
+          plan_id: plan.id,
           payments: payments.map { |p| payment_serializer(p) }
         },
         message: "Checkout completed successfully",
@@ -79,6 +77,87 @@ class Api::V1::PaymentsController < ActionController::API
       )
     rescue Stripe::StripeError => e
       render_error(message: e.message)
+    end
+  end
+
+  def save_signature
+    begin
+      # Validate required parameters
+      required_params = [:user_id, :agreement_id, :signature]
+      missing_params = required_params.select { |param| params[param].blank? }
+      unless missing_params.empty?
+        return render_error(message: "Missing required parameters: #{missing_params.join(', ')}", status: :bad_request)
+      end
+
+      # Find the agreement and verify ownership
+      agreement = Agreement.find(params[:agreement_id])
+      user = User.find(params[:user_id])
+      
+      # Verify the agreement belongs to the user
+      unless agreement.plan.user_id == user.id
+        return render_error(message: "Agreement does not belong to user", status: :forbidden)
+      end
+
+      # Decode base64 signature
+      signature_data = params[:signature]
+      unless signature_data.is_a?(String) && signature_data.start_with?('data:image/png;base64,')
+        return render_error(message: "Invalid signature format. Expected base64 encoded PNG", status: :bad_request)
+      end
+
+      # Extract base64 data
+      base64_data = signature_data.sub(/^data:image\/png;base64,/, '')
+      
+      # Decode and create temporary file
+      begin
+        decoded_data = Base64.strict_decode64(base64_data)
+        
+        # Create temporary file
+        temp_file = Tempfile.new(['signature_', '.png'])
+        temp_file.binmode
+        temp_file.write(decoded_data)
+        temp_file.rewind
+        
+        # Attach signature to agreement
+        filename = "signature_#{agreement.id}_#{Time.current.to_i}.png"
+        agreement.signature.attach(
+          io: temp_file,
+          filename: filename,
+          content_type: "image/png"
+        )
+        
+        # Update agreement status if needed
+        agreement.update!(signed_at: Time.current) if agreement.signed_at.blank?
+        
+        # Generate signature URL
+        signature_url = Rails.application.routes.url_helpers.rails_blob_url(agreement.signature, only_path: true)
+        
+        render_success(
+          data: {
+            agreement_id: agreement.id,
+            signature_url: signature_url,
+            signature_filename: filename,
+            signed_at: agreement.signed_at
+          },
+          message: "Signature saved successfully",
+          status: :created
+        )
+          
+      ensure
+        # Clean up temporary file
+        temp_file&.close
+        temp_file&.unlink
+      end
+      
+    rescue ActiveRecord::RecordNotFound => e
+      render_error(message: "Record not found: #{e.message}", status: :not_found)
+    rescue ArgumentError => e
+      render_error(message: e.message, status: :bad_request)
+    rescue Base64::DecodeError => e
+      render_error(message: "Invalid base64 encoding in signature", status: :bad_request)
+    rescue StandardError => e
+      Rails.logger.error "Signature save error: #{e.class} - #{e.message}"
+      Rails.logger.error e.backtrace.join("\n")
+      render_error(message: "Failed to save signature", status: :internal_server_error)
     end
   end
 
@@ -142,7 +221,7 @@ class Api::V1::PaymentsController < ActionController::API
         plan: plan,
         user: plan.user,
         payment_method: payment_method,
-        payment_type: plan_params[:name] ? :full_payment : :down_payment,
+        payment_type: plan.duration > 0 ? :down_payment : :full_payment,
         payment_amount: plan.down_payment,
         total_payment_including_fee: (plan.down_payment * 1.03).round(2),
         transaction_fee: (plan.down_payment * 0.03).round(2),
@@ -152,8 +231,8 @@ class Api::V1::PaymentsController < ActionController::API
     end
 
     # Monthly installments
-    start_date = plan_params[:first_installment_date].present? ?
-                 Date.parse(plan_params[:first_installment_date]) :
+    start_date = params[:first_installment_date].present? ?
+                 Time.zone.strptime(params[:first_installment_date], "%m-%d-%Y") :
                  nil
 
     if plan.duration > 0

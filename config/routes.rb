@@ -37,6 +37,7 @@ Rails.application.routes.draw do
       post 'payments/create_user_plan', to: 'payments#create_user_plan'
       post 'payments/checkout', to: 'payments#checkout'
       post 'payments/create_verification_session', to: 'payments#create_verification_session'
+      post 'payments/save_signature', to: 'payments#save_signature'
       post '/stripe/webhooks', to: 'stripe_webhooks#create'
     end
   end
