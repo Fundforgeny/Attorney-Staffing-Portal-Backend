@@ -10,14 +10,16 @@ class Api::V1::PaymentsController < ActionController::API
       # Generate the filled agreement PDF (returns a file path)
       pdf_path = AgreementPdfGenerator.new(user, plan).generate
       filename = "fund_forge_agreement_#{plan.id}.pdf"
-      agreement = Agreement.create( user: user, plan: plan)
+      agreement = Agreement.create(user: user, plan: plan)
 
       agreement.pdf.attach(
         io: File.open(pdf_path),
         filename: filename,
         content_type: "application/pdf"
       )
-      agreement_url = Rails.application.routes.url_helpers.rails_blob_url(agreement.pdf, only_path: true)
+      
+      # Generate S3 public URL
+      agreement_url = agreement.pdf.url
 
       render_success(
         data: {
@@ -172,19 +174,27 @@ class Api::V1::PaymentsController < ActionController::API
 
   def create_or_find_user
     full_name = params.dig(:user, :name)
-    email     = params.dig(:user, :email).downcase.strip
+    email = params.dig(:user, :email)&.downcase&.strip
 
-    render_error(message: "Name and email are required", status: :bad_request) if full_name.blank? || email.blank?
-
-    name_parts  = full_name.split(" ", 2)
-    first_name  = name_parts[0]
-    last_name   = name_parts[1] || ""
-
-    User.find_or_create_by!(email: email) do |u|
-      u.first_name = first_name
-      u.last_name  = last_name
-      u.user_type = "client"
+    if full_name.blank? || email.blank?
+      render_error(message: "Name and email are required", status: :bad_request)
+      return
     end
+
+    first_name, last_name = full_name.split(" ", 2)
+    last_name ||= ""
+
+    user = User.find_or_initialize_by(email: email)
+
+    if user.new_record?
+      user.first_name = first_name
+      user.last_name  = last_name
+      user.user_type  = "client"
+      user.skip_confirmation!
+    end
+
+    user.save!
+    user
   end
 
   def store_vault_token(user)
@@ -256,8 +266,8 @@ class Api::V1::PaymentsController < ActionController::API
     end
 
     # Monthly installments
-    start_date = plan_params[:first_installment_date].present? ?
-                 Time.zone.strptime(plan_params[:first_installment_date], "%m-%d-%Y") :
+    start_date = params[:first_installment_date].present? ?
+                 Time.zone.strptime(params[:first_installment_date], "%m-%d-%Y") :
                  nil
 
     if plan.duration > 0
