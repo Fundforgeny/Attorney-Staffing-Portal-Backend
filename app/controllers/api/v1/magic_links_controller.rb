@@ -82,6 +82,7 @@ class Api::V1::MagicLinksController < ActionController::API
     render_success(
       data: {
         user_id: user.id,
+        name: user.first_name + " " + user.last_name,
         email: user.email,
         plan_id: plan.id,
         down_payment: plan.down_payment.to_i,
@@ -92,7 +93,6 @@ class Api::V1::MagicLinksController < ActionController::API
       status: :ok
     )
   end
-
 
   private
 

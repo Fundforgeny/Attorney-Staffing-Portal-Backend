@@ -40,7 +40,7 @@ Rails.application.routes.draw do
       post 'payments/create_verification_session', to: 'payments#create_verification_session'
       post 'payments/save_signature', to: 'payments#save_signature'
       post 'stripe_webhooks', to: 'stripe_webhooks#receive'
-      get 'magic_links/validate', to: 'magic_links#validate'
+      post 'magic_links/validate', to: 'magic_links#validate'
     end
   end
   # Render dynamic PWA files from app/views/pwa/* (remember to link manifest in application.html.erb)
