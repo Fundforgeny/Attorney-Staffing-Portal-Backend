@@ -46,7 +46,7 @@ class Api::V1::MagicLinksController < ActionController::API
 
       magic_link_token = generate_magic_link_token(user)
 
-      frontend_url = "https://attorney-staffing-portal-frontend.onrender.com/payment"
+      frontend_url = "https://payments.fundforge.net/pay"
       magic_link = "#{frontend_url}?token=#{magic_link_token}"
 
       render_success(
