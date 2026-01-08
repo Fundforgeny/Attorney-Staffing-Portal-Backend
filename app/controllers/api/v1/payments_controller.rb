@@ -2,9 +2,6 @@
 class Api::V1::PaymentsController < ActionController::API
   include ApiResponse
 
-  # Allow iframe embedding for PDF URLs
-  after_action :set_iframe_headers, only: [:create_user_plan]
-
   def create_user_plan
     ActiveRecord::Base.transaction do
       user = create_or_find_user
@@ -38,7 +35,6 @@ class Api::V1::PaymentsController < ActionController::API
     render_error(message: e.message, status: :unprocessable_entity)
   end
 
-
   def checkout
     ActiveRecord::Base.transaction do
       user = User.find(params[:user_id])
@@ -66,10 +62,17 @@ class Api::V1::PaymentsController < ActionController::API
   end
 
   def create_verification_session
+    user = User.find_by(id: params[:user_id])
+    unless user
+      return render_error(message: "User not found", status: :not_found)
+    end
+
     begin
       verification_session = Stripe::Identity::VerificationSession.create(
         type: 'document'
       )
+      # Save the record in DB
+      user.update!(stripe_verification_session_id: verification_session.id)
 
       render_success(
         data: {
@@ -78,6 +81,7 @@ class Api::V1::PaymentsController < ActionController::API
         message: "Verification session created successfully",
         status: :created
       )
+
     rescue Stripe::StripeError => e
       render_error(message: e.message)
     end
@@ -167,10 +171,10 @@ class Api::V1::PaymentsController < ActionController::API
   private
 
   def create_or_find_user
-    full_name = params[:user][:name]
-    email     = params[:user][:email].downcase.strip
+    full_name = params.dig(:user, :name)
+    email     = params.dig(:user, :email).downcase.strip
 
-    raise ArgumentError, "Name and email are required" if full_name.blank? || email.blank?
+    render_error(message: "Name and email are required", status: :bad_request) if full_name.blank? || email.blank?
 
     name_parts  = full_name.split(" ", 2)
     first_name  = name_parts[0]
@@ -184,39 +188,57 @@ class Api::V1::PaymentsController < ActionController::API
   end
 
   def store_vault_token(user)
-    vault_token = params[:payment_method][:vault_token]
+    vault_token = params.dig(:payment_method, :vault_token)
     raise ArgumentError, "vault_token is required" if vault_token.blank?
     PaymentMethod.create!(
       user: user,
       provider: "stripe",
       vault_token: vault_token,
       cardholder_name: "#{user.first_name} #{user.last_name}".strip,
-      last4: params[:payment_method][:vault_token]["last_four"].to_s,
-      exp_month: params[:payment_method][:vault_token]["exp_month"].to_s,
-      exp_year: params[:payment_method][:vault_token]["exp_year"].to_s,
-      card_brand: params[:payment_method][:vault_token]["type"]
+      last4: params.dig(:payment_method, :vault_token)["last_four"].to_s,
+      exp_month: params.dig(:payment_method, :vault_token)["exp_month"].to_s,
+      exp_year: params.dig(:payment_method, :vault_token)["exp_year"].to_s,
+      card_brand: params.dig(:payment_method, :vault_token)["type"]
     )
   end
 
   def create_plan_instance(user)
-    plan_params = params[:plan]
+    plan_params = params.dig(:plan)
 
-    Plan.create!(
-      user: user,
-      name: plan_params[:name],
-      duration: plan_params[:duration],
-      total_payment: plan_params[:total_payment],
-      total_interest_amount: plan_params[:total_interest],
-      monthly_payment: plan_params[:monthly_payment],
-      monthly_interest_amount: plan_params[:monthly_interest],
-      down_payment: plan_params[:down_payment],
-      status: :active
-    )
+    if plan_params[:plan_id].present?
+      plan = Plan.find_by(id: plan_params[:plan_id])
+      raise ActiveRecord::RecordNotFound, "Plan not found" if plan.nil?
+      
+      plan.update!(
+        name: plan_params[:name],
+        duration: plan_params[:duration],
+        total_payment: plan_params[:total_payment],
+        total_interest_amount: plan_params[:total_interest],
+        monthly_payment: plan_params[:monthly_payment],
+        monthly_interest_amount: plan_params[:monthly_interest],
+        down_payment: plan_params[:down_payment],
+        status: :active
+      )
+    else
+      plan = Plan.create!(
+        user: user,
+        name: plan_params[:name],
+        duration: plan_params[:duration],
+        total_payment: plan_params[:total_payment],
+        total_interest_amount: plan_params[:total_interest],
+        monthly_payment: plan_params[:monthly_payment],
+        monthly_interest_amount: plan_params[:monthly_interest],
+        down_payment: plan_params[:down_payment],
+        status: :active
+      )
+    end
+    
+    plan
   end
 
   def create_payment_schedule(plan, payment_method)
     payments = []
-    plan_params = params[:plan]
+    plan_params = params.dig(:plan)
 
     # Down payment
     if plan.down_payment > 0
@@ -234,8 +256,8 @@ class Api::V1::PaymentsController < ActionController::API
     end
 
     # Monthly installments
-    start_date = params[:first_installment_date].present? ?
-                 Time.zone.strptime(params[:first_installment_date], "%m-%d-%Y") :
+    start_date = plan_params[:first_installment_date].present? ?
+                 Time.zone.strptime(plan_params[:first_installment_date], "%m-%d-%Y") :
                  nil
 
     if plan.duration > 0
@@ -266,15 +288,5 @@ class Api::V1::PaymentsController < ActionController::API
       paid_at: payment.paid_at,
       charge_id: payment.charge_id
     }
-  end
-
-  private
-
-  def set_iframe_headers
-    response.headers['X-Frame-Options'] = 'ALLOWALL'
-    response.headers['Content-Security-Policy'] = "frame-ancestors *"
-    response.headers['Access-Control-Allow-Origin'] = '*'
-    response.headers['Access-Control-Allow-Methods'] = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
-    response.headers['Access-Control-Allow-Headers'] = 'Origin, Content-Type, Accept, Authorization, X-Frame-Options'
   end
 end

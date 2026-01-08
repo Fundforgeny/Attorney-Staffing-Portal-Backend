@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_01_07_100043) do
+ActiveRecord::Schema[8.0].define(version: 2026_01_08_090144) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -241,7 +241,10 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_07_100043) do
     t.integer "annual_salary"
     t.integer "user_type", default: 0, null: false
     t.integer "payment_method_id"
-    t.string "verification_status"
+    t.string "stripe_verification_status"
+    t.string "stripe_verification_session_id"
+    t.string "magic_link_token"
+    t.string "ghl_contact_id"
     t.index ["user_type"], name: "index_users_on_user_type"
   end
 
