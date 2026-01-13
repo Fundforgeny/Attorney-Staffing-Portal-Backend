@@ -1,15 +1,21 @@
 ActiveAdmin.register Firm do
-  permit_params :name, :address_street, :city, :state, :country, :phone, :email, :website, :description, :industry, :size
+  permit_params :name, :description, :size, :logo, :primary_color, :secondary_color
 
   index do
     selectable_column
     id_column
     column :name
-    column :industry
-    column :size
-    column :city
-    column :state
-    column :phone
+    column :description
+    column :logo do |firm|
+      if firm.logo.attached?
+        image_tag firm.logo.url, width: 50, height: 50
+      else
+        "No logo"
+      end
+    end
+    column :primary_color
+    column :secondary_color
+    column :created_at
     column :users_count do |firm|
       firm.users.count
     end
@@ -20,16 +26,17 @@ ActiveAdmin.register Firm do
     attributes_table do
       row :id
       row :name
-      row :address_street
-      row :city
-      row :state
-      row :country
-      row :phone
-      row :email
-      row :website
       row :description
-      row :industry
-      row :size
+      row :logo do |firm|
+        if firm.logo.attached?
+          image_tag firm.logo.url, width: 100, height: 100
+        else
+          "No logo"
+        end
+      end
+      row :primary_color
+      row :secondary_color
+      row :created_at
       row :users_count do
         resource.users.count
       end
@@ -50,24 +57,14 @@ ActiveAdmin.register Firm do
   end
 
   filter :name
-  filter :industry
-  filter :size
-  filter :city
-  filter :state
 
   form do |f|
     f.inputs "Firm Information" do
       f.input :name
-      f.input :address_street
-      f.input :city
-      f.input :state
-      f.input :country
-      f.input :phone
-      f.input :email
-      f.input :website
       f.input :description, as: :text
-      f.input :industry
-      f.input :size, as: :select, collection: ["1-10", "11-50", "51-200", "201-500", "500+"]
+      f.input :primary_color
+      f.input :secondary_color
+      f.input :logo, as: :file
     end
     f.actions
   end
@@ -76,9 +73,9 @@ ActiveAdmin.register Firm do
   batch_action :export_to_csv do |ids|
     firms = Firm.where(id: ids)
     csv_data = CSV.generate do |csv|
-      csv << ["Name", "Industry", "Size", "City", "State", "Phone", "Email"]
+      csv << ["Name", "Description", "Logo", "Primary Color", "Secondary Color"]
       firms.each do |firm|
-        csv << [firm.name, firm.industry, firm.size, firm.city, firm.state, firm.phone, firm.email]
+        csv << [firm.name, firm.description, firm.logo.attached? ? firm.logo.url : "No logo", firm.primary_color, firm.secondary_color]
       end
     end
     

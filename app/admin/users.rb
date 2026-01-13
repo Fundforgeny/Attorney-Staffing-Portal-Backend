@@ -72,8 +72,7 @@ ActiveAdmin.register User, as: "Users" do
       f.input :country
       f.input :annual_salary
       f.input :contact_source
-      f.input :firm_ids, as: :select, collection: Firm.all.pluck(:name, :id), 
-              multiple: true, include_blank: true, label: "Firms"
+      f.input :firm_ids, as: :select, collection: Firm.all.pluck(:name, :id)
     end
     
     f.inputs "Password (leave blank to keep current password)" do
