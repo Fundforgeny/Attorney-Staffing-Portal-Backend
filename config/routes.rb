@@ -25,7 +25,7 @@ Rails.application.routes.draw do
   devise_scope :user do
     get "/admin/login", to: "admin/sessions#new", as: :new_admin_session
     post "/admin/login", to: "admin/sessions#create", as: :admin_session
-    delete "/admin/logout", to: "admin/sessions#destroy", as: :destroy_admin_session
+    get "/admin/logout", to: "admin/sessions#destroy", as: :destroy_admin_session
   end
 
   # Active Admin routes

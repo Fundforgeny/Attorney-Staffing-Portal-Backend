@@ -23,7 +23,6 @@ class Admin::SessionsController < Devise::SessionsController
   
   def destroy
     super
-    redirect_to new_admin_session_path, notice: "Logged out successfully."
   end
   
   protected
