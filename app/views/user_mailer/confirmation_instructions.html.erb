@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html>
+<head></head>
+<head>
+    <meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <style type="text/css">
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+        body {
+            margin: 0;
+        }
+        table {
+            border-spacing: 0;
+            border: none
+        }
+        td {
+            padding: 0;
+        }
+        img {
+            border: 0;
+        }
+        .wrapper {
+            width: 100%;
+            table-layout: fixed;
+        }
+        .main {
+            width: 100%;
+            max-width: 800px !important;
+            background-color: #0F0F0F;
+            font-family: "Poppins", Arial, Helvetica, sans-serif;
+            color: #44413D;
+            text-align: center;
+            padding: 24px 64px !important;
+            background-image: url("https://shadlabs-images.s3.amazonaws.com/bg1_desk.png"), url("https://shadlabs-images.s3.amazonaws.com/bg2_desk.png") !important;
+            background-image: url("https://shadlabs-images.s3.amazonaws.com/bg1_desk.png"), url("https://shadlabs-images.s3.amazonaws.com/bg2_desk.png"), linear-gradient(#0F0F0F,#0F0F0F) !important;
+            background-repeat: no-repeat;
+        }
+
+        .images_desk {
+            display: block !important;
+        }
+        .outlook_mobile {
+            display: none !important
+        }
+        .three-columns {
+            padding: 20px 0px;
+            font-size: 0;
+            color: white;
+            width: 100%;
+        }
+        .three-columns .column {
+            width: 33%;
+            max-width: 165px;
+            display: inline-block;
+            vertical-align: top;
+
+        }
+        .three-columns .padding {
+            padding: 0 15px;
+        }
+        .three-columns .content {
+            font-size: 16px;
+            line-height: 19px;
+            text-align: center;
+        }
+        h3 {
+            color: white;
+            font-weight: 400;
+            margin: 0
+        }
+        .button {
+            text-decoration: none;
+            font-size: 16px;
+            background-color: #CC4800;
+            border: none;
+            padding: 20px 43px;
+            display: inline-block;
+            border-radius: 8px;
+            cursor: pointer;
+        }
+        .title {
+            font-size: 42px !important;
+            font-weight: 500 !important;
+            padding: 66px 80px 24px 80px !important;
+            line-height: 48px !important;
+        }
+        .description {
+            font-size: 20px !important;
+            line-height: 24px !important;
+        }
+        .body_title {
+            font-size: 28px !important;
+            line-height: 32px !important;
+            padding-bottom: 16px !important;
+        }
+        .body_table {
+            background-color: #252525 !important;
+            background-image: linear-gradient(#252525, #252525) !important;
+            padding: 63px !important;
+            border-radius: 16px;
+        }
+        .body_description {
+            font-size: 19.5px !important;
+            font-weight: 400 !important;
+            color: #B3B3B3 !important;
+            padding: 0 0 48px 0 !important;
+            line-height: 24px !important;
+        }
+        .button_row {
+            padding: 24px 20px 60px !important;
+            text-align: center;
+        }
+        .images_mobile {
+            display: none;
+        }
+        .divider {
+            padding: 44px 0 0 0 !important;
+            border-bottom: 1px solid #C7C7C7;
+        }
+        .body_footer_1 {
+            color: #B3B3B3;
+            font-size: 20px !important;
+            padding: 56px 0 0 0 !important;
+            line-height: 24px !important;
+            text-align: center;
+        }
+        .body_footer_1_roll {
+            font-size: 20px !important;
+            line-height: 24px !important;
+            text-align: center;
+            padding-top: 28px !important;
+        }
+        .three-columns_apps {
+            padding: 0px 0px !important;
+            padding-top: 32px !important;
+            font-size: 0;
+            color: white;
+            width: 100%;
+        }
+        .three-columns_apps .column {
+            width: 100%;
+            max-width: 215px !important;
+            display: inline-block;
+            vertical-align: top;
+        }
+        .three-columns_apps .padding {
+            padding: 0 16px !important;
+        }
+        .copy_right {
+            padding: 40px 0px 16px 0px !important;
+            font-size: 20px !important;
+            line-height: 24px !important;
+            color: white;
+            padding-bottom: 0;
+        }
+        .sb{
+            padding: 0;
+            margin-top: 0;
+        }
+        .apple_padding {
+            padding-top: 24px !important;
+        }
+        .playstore_padding {
+            padding-top: 24px !important;
+        }
+    </style>
+    <!--[if mso]>
+    <style type="text/css">
+        body,
+        table,
+        td {
+            font-family: Arial, Helvetica, sans-serif !important;
+        }
+        table {
+            border-collapse: collapse !important;
+            border-spacing: 0 !important;
+        }
+        .main {
+            background-color: #0F0F0F;
+        }
+        .title {
+            font-size: 42px !important;
+            font-weight: 500 !important;
+            padding: 66px 80px 24px 80px !important;
+            line-height: 48px !important;
+        }
+        .divider {
+            padding-top: 66px !important;
+        }
+        .body_table {
+            background-color: #252525;
+            padding: 60px !important;
+            border-radius: 16px;
+        }
+        .copy_right {
+            padding: 40px 0px 16px 0px !important;
+            font-size: 20px !important;
+            line-height: 24px !important;
+            color: white;
+        }
+    </style>
+    <![endif]-->
+    <style type="text/css">
+        @media screen and (max-width:1240px) {
+            .wrapper {
+                width: 100%;
+            }
+            .main {
+                max-width: 375px !important;
+                padding: 30px 25px !important;
+                background-image: url("https://shadlabs-images.s3.amazonaws.com/bg1_mobile.png"), url("https://shadlabs-images.s3.amazonaws.com/bg2_mobile_V3.png") !important;
+                background-image: url("https://shadlabs-images.s3.amazonaws.com/bg1_mobile.png"), url("https://shadlabs-images.s3.amazonaws.com/bg2_mobile_V3.png"), linear-gradient(#0F0F0F,#0F0F0F)!important;
+                background-repeat: no-repeat;
+            }
+            .title {
+                font-size: 24px !important;
+                padding: 32px 15px 24px 15px !important;
+                line-height: 28px !important;
+            }
+            .description {
+                font-size: 16px !important;
+                line-height: 20px !important;
+            }
+            u + .body .gmail-blend-screen { background: #000 !important; mix-blend-mode:screen !important; }
+            u + .body .gmail-blend-difference { background: #000 !important; mix-blend-mode:difference !important;}
+            .button_row {
+                padding: 24px !important;
+                text-align: center !important;
+            }
+            .body_table {
+                padding: 32px 16px !important;
+                width: 325px !important;
+                background-color: #252525 !important;
+                background-image: linear-gradient(#252525, #252525) !important
+            }
+            .body_title {
+                font-size: 22px !important;
+                line-height: 26px !important;
+            }
+            .body_description {
+                font-size: 16px !important;
+                line-height: 20px !important;
+                padding: 0 0 40px 0 !important;
+                margin-top: 16px !important;
+                margin-bottom: 16px !important;
+            }
+            .images_desk {
+                display: none !important;
+            }
+            .images_mobile {
+                display: block !important;
+            }
+            .outlook_mobile {
+                display: none !important
+            }
+            .images_mobile td {
+                display: inline-block !important;
+                text-align: center !important;
+            }
+            .images_mobile img {
+                width: 40px;
+                height: 40px;
+            }
+            .three-columns {
+                display: block;
+                font-size: 0 !important;
+                color: white;
+                width: 100% !important;
+                padding: initial !important;
+                max-height: 115px !important;
+            }
+
+            .three-columns .content {
+                line-height: initial !important;
+            }
+            .three-columns .padding {
+                padding: 0px !important
+            }
+            .three-columns .column {
+                width: 50%;
+                max-width: 87px !important;
+                display: inline-block !important;
+                vertical-align: top !important;
+                font-size: 0 !important;
+            }
+            .divider {
+                padding-top: 48px !important
+            }
+            .body_footer_1 {
+                font-size: 16px !important;
+                padding: 24px 0 0 0 !important;
+            }
+            .three-columns_apps {
+                padding-top: 8px !important;
+                padding-right: 13px !important;
+                padding-left: 0px !important;
+            }
+            .copy_right {
+                padding: 24px 0 0 0 !important;
+                font-size: 12px !important;
+                line-height: 14px !important;
+                margin-bottom: 0 !important;
+            }
+            .sb {
+                font-size: 12px !important;
+                line-height: 14px !important;
+                margin-top: 0 !important;
+                padding: 8px 0 !important;
+            }
+            .apple_padding {
+                padding-left: 0px !important;
+            }
+            .playstore_padding {
+                padding-right: 0px !important;
+                padding-top: 24px !important;
+            }
+        }
+    </style>
+</head>
+<body class="body">
+<center class="wrapper">
+    <!-- This is needed to add padding around in outlook desktop version 2019 and earlier -->
+    <!--[if (gte mso 9)|(IE)]><table style="background-color: #0F0F0F;" width="800" align="center" cellpadding="0" cellspacing="0" border="0"><tr><td style="padding: 24px 64px"><![endif]-->
+    <table class="main" align="center" border="0" cellspacing="0" cellpadding="0" style="max-width: 375px;padding: 30px 25px;background-color: #0F0F0F;background-image: url('https://shadlabs-images.s3.amazonaws.com/bg1_mobile.png'); background-repeat: no-repeat; background-position: left top;" role="presentation">
+        <!-- LOGO -->
+        <tr>
+            <td style="text-align: center;">
+							<% if @location && @location.web_logo.attached? %>
+								<%= image_tag url_for(@location.web_logo), style: "width: 240px; height: auto;" if @location.web_logo.attached? %>
+							<% else %>
+                <img src="https://shadlabs-images.s3.amazonaws.com/email-logo-header-new-V2.png" alt="logo" width="186" style="max-width: 100%;"/>
+							<% end %>
+            </td>
+        </tr>
+
+        <!-- WELCOME -->
+        <tr>
+            <td class="title" style="color: white; text-align: center; font-size: 24px;line-height: 28px; padding: 32px 15px 24px 15px">
+                <div class="gmail-blend-screen">
+                    <div class="gmail-blend-difference">
+                        <%= @title_1 %>
+                    </div>
+                </div>
+            </td>
+        </tr>
+        <tr>
+            <td class="description" style="color: #B3B3B3; font-weight: 400; text-align: center; font-size: 16px;line-height: 20px;">
+                <div class="gmail-blend-screen">
+                    <div class="gmail-blend-difference">
+                        <% if @body_1.present? %>
+                            <p><%= @body_1.html_safe %></p>
+                        <% end %>
+                    </div>
+                </div>
+            </td>
+        </tr>
+
+        <tr>
+            <td class="button_row" style="text-align: center; padding:24px; text-align: center;">
+                <a href="<%= @confirmation_url %>"  style="font-size: 0;">
+                    <!-- <div class="button">
+                        Get Started Now
+                    </div> -->
+                    <img src="https://shadlabs-images.s3.amazonaws.com/started-button-V2.png" alt="Get Started Now" width="200" />
+                </a>
+            </td>
+        </tr>
+
+        <!-- FEATURES -->
+
+        <tr>
+
+            <td class="body_table" style="background-color: #252525; background-image: linear-gradient(#252525, #252525); padding: 32px 16px; border-radius: 16px;">
+                <table width:"100%" style=" width: 100%;" role="presentation">
+        <tr>
+
+            <td class="body_title" style="color: white; text-align: center; margin: 0; font-weight: 500; font-size: 22px; line-height: 26px; padding-bottom: 16px;">
+                <div class="gmail-blend-screen">
+                    <div class="gmail-blend-difference">
+                        <%= @title_2 %>
+                    </div>
+                </div>
+
+            </td>
+
+        </tr>
+        <tr>
+            <td class="body_description" style="text-align: center;font-size: 16px;font-weight: 400;color: #B3B3B3;line-height: 20px;padding-bottom: 40px;">
+                <div class="gmail-blend-screen">
+                    <div class="gmail-blend-difference">
+                        <% if @body_2.present? %>
+                            <p><%= @body_2.html_safe %></p>
+                        <% end %>
+                    </div>
+                </div>
+            </td>
+        </tr>
+
+        <!--[if !mso]><!-->
+        <tr class="images_desk" style="display:none;">
+            <td style="width: 1%;">
+                <table width:"100%" style="width: 100%">
+        <tr>
+            <td class="three-columns" align="center">
+
+                <table class="column" style="margin-top: 6px; display: inline-block;">
+                    <tr>
+                        <td class="padding" style="padding-left: 0;">
+                            <table class="content">
+                                <tr>
+                                    <td><!--EXTRA PADDING-->
+                                        <img src="https://shadlabs-images.s3.amazonaws.com/email-truck-V2.png" alt="Truck" width="42" height="42"/>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="color: white; padding-top: 12px;"> <!--EXTRA PADDING  3 a 13-->
+                                        Food Truck Schedule
+                                    </td>
+                                </tr>
+                            </table> <!--end of the content-->
+
+                        </td> <!--end padding-->
+                    </tr>
+                </table> <!--end of the column 3-->
+
+                <table class="column" style="display: inline-block;">
+                    <tr>
+                        <td class="padding">
+                            <table class="content">
+                                <tr>
+                                    <td style="padding-top: 4px;">
+                                        <img src="https://shadlabs-images.s3.amazonaws.com/email-parking-V2.png" alt="Parking Information" width="48" height="48"/>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="color: white; padding-top: 7px;">  <!--EXTRA PADDING  3 a 13-->
+                                        Parking Information
+                                    </td>
+                                </tr>
+                            </table> <!--end of the content-->
+
+                        </td> <!--end padding-->
+                    </tr>
+                </table> <!--end of the column 1-->
+
+
+                <table class="column" style="display: inline-block;">
+                    <tr>
+                        <td class="padding" style="padding-left: 30px; padding-right: 0px;">
+                            <table class="content">
+                                <tr>
+                                    <td style="font-size: 0;">
+                                        <img src="https://shadlabs-images.s3.amazonaws.com/email-bolt-V2.png" alt="Weather" width="48" height="48"/>
+                                    </td>
+                                </tr>
+                                <tr>
+                                    <td style="color: white; padding-top: 3px;">
+                                        Inclement Weather Updates
+                                    </td>
+                                </tr>
+                            </table> <!--end of the content-->
+
+                        </td> <!--end padding-->
+                    </tr>
+                </table> <!--end of the column 2-->
+
+            </td> <!--end three col wrapper-->
+        </tr>
+    </table>
+    </td>
+    </tr>
+
+    <tr class="images_desk" style="display:none;">
+        <td style="width: 1%;">
+            <table width:"100%" style="margin-top: 10px; width: 100%;">
+    <tr>
+        <td class="three-columns" align="center">
+
+            <table class="column" style="display: inline-block;">
+                <tr>
+                    <td class="padding" style="padding-top: 5px; padding-left: 0;">
+                        <table class="content">
+                            <tr>
+                                <td>
+                                    <img src="https://shadlabs-images.s3.amazonaws.com/email-bench-tree-V2.png" alt="aa" width="40"/>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="color: white; padding-top: 10px;"> <!--EXTRA PADDING 3 A 13 -->
+                                    On Campus Amenities
+                                </td>
+                            </tr>
+                        </table> <!--end of the content-->
+
+                    </td> <!--end padding-->
+                </tr>
+            </table> <!--end of the column 3-->
+
+            <table class="column" style="display: inline-block;">
+                <tr>
+                    <td class="padding" style="padding-top: 5px;">
+                        <table class="content">
+                            <tr>
+                                <td> <!--EXTRA PADDING 3 A 11 -->
+                                    <img src="https://shadlabs-images.s3.amazonaws.com/email-users-V2.png" alt="contact list" width="40"/>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 10px 22px 0; color: white;"> <!--EXTRA PADDING 3 A 11 -->
+                                    Contact Lists
+                                </td>
+                            </tr>
+                        </table> <!--end of the content-->
+
+                    </td> <!--end padding-->
+                </tr>
+            </table> <!--end of the column 1-->
+
+
+            <table class="column" style="display: inline-block;">
+                <tr>
+                    <td class="padding" style="padding-top: 1px; padding-right: 0px; padding-left: 28px;">
+                        <table class="content">
+                            <tr>
+                                <td style="padding-top: 2px;">
+                                    <img src="https://shadlabs-images.s3.amazonaws.com/email-file-V4.png" alt="Facility Document Library" width="40"/>
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="padding: 11px 0 10px;color: white;">
+                                    Facility Document Library
+                                </td>
+                            </tr>
+                        </table> <!--end of the content-->
+
+                    </td> <!--end padding-->
+                </tr>
+            </table> <!--end of the column 2-->
+
+        </td> <!--end three col wrapper-->
+    </tr>
+    </table>
+    </td>
+    </tr>
+    <!--<![endif]-->
+
+    <!--GENERAL CLIENTS MOBILE IMAGES-->
+
+    <!--[if !mso]><!-->
+    <tr class="images_mobile" style="display: none;">
+        <td style="width: 100%;">
+            <table width="100%" style="width: 100%;">
+                <tr>
+
+                    <td style="width: 100%">
+                        <img  style="width: 323px !important; height: 118px !important;" src="https://shadlabs-images.s3.amazonaws.com/my_production.png" alt="" width="323" height="118">
+                    </td>
+
+                </tr>
+            </table>
+        </td>
+    </tr>
+
+
+    <tr class="images_mobile" style="margin-top: 40px; display: none;">
+        <td style="width: 100%;">
+            <table width="100%" style="width: 100%;">
+                <tr>
+                    <td style="width: 100%">
+                        <img  style="width: 323px !important; height: 118px !important;" src="https://shadlabs-images.s3.amazonaws.com/my_production_2.png" alt="" width="323" height="118">
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+
+
+    <tr class="images_mobile" style="margin-top: 50px; display: none;">
+        <td style="width: 100%;">
+            <table width="100%" style="width: 100%;">
+                <tr>
+                    <td style="width: 100%">
+                        <img  style="width: 323px !important; height: 118px !important;" src="https://shadlabs-images.s3.amazonaws.com/my_production_3.png" alt="" width="323" height="118">
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+    <!--<![endif]-->
+    <!--END GENERAL CLIENTS MOBILE IMAGES-->
+
+    <!--MOBILE IMAGES FOR outlook.com-->
+    <!--[if !mso]><!-->
+    <tr class="outlook_mobile">
+        <td style="width: 100%; padding: 10px;">
+            <table style="width: 100%; border-collapse: collapse;" align="center" role="presentation">
+                <tr>
+                    <td style="width: 50%; padding-right: 15px; text-align: center;">
+                        <img style="color: white !important" src="https://shadlabs-images.s3.amazonaws.com/email-parking-V2.png" alt="Parking Information" width="40" height="40"/>
+                        <p style="color: white;">Parking Information</p>
+                    </td>
+                    <td style="width: 50%; text-align: center;">
+                        <img src="https://shadlabs-images.s3.amazonaws.com/email-truck-V2.png" alt="Truck" width="38" height="38"/>
+                        <p style="color: white;">Food Truck Schedule</p>
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+
+    <tr class="outlook_mobile">
+        <td style="width: 100%;">
+            <table style="width: 100%; border-collapse: collapse; margin-top: 20px;" align="center" role="presentation">
+                <tr>
+                    <td style="width: 34%; text-align: center; padding-right: 2px;">
+                        <img src="https://shadlabs-images.s3.amazonaws.com/email-bolt-V2.png" alt="Weather" width="40" height="40"/>
+                        <p style="color: white;">Inclement Weather Updates</p>
+                    </td>
+                    <td style="width: 33%; text-align: center;"<%= @body_3 %>>
+                        <img src="https://shadlabs-images.s3.amazonaws.com/email-bench-tree-V2.png" alt="Amenities" width="37" height="37"/>
+                        <p style="color: white;">On Campus Amenities</p>
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+
+    <tr class="outlook_mobile">
+        <td style="width: 100%;">
+            <table style="width: 100%; border-collapse: collapse; margin-top: 40px; margin-left: 2px;" align="center" role="presentation">
+                <tr>
+                    <td style="width: 50%; text-align: center;display: inline-block; padding-left: 24%;">
+                        <img src="https://shadlabs-images.s3.amazonaws.com/email-users-V2.png" alt="Contact List" width="40" height="40"/>
+                        <p style="color: white;">Contact Lists</p>
+                    </td>
+                    <td style="width: 50%; text-align: center;">
+                        <img src="https://shadlabs-images.s3.amazonaws.com/email-file-V4.png" alt="Facility Document Library" width="40" height="40"/>
+                        <p style="color: white;">Facility Document Library</p>
+                    </td>
+                </tr>
+            </table>
+        </td>
+    </tr>
+    <!--<![endif]-->
+    <!--END MOBILE IMAGES FOR outlook.com-->
+
+    <!--DESKTOP IMAGES FOR OUTLOOK DESKTOP 2019 AND EARLIER-->
+    <!--[if mso]>
+    <tr style="display:none" class="images_desk">
+        <td style="width:100%;padding-top:15px;" width="100%">
+            <table style="width:100%" width="100%">
+                <tbody>
+                <tr class="three-columns">
+                    <td style="width:33.33%;text-align:center;vertical-align: middle;">
+                        <table class="content" role="presentation">
+                            <tr>
+                                <td>
+                                    <img height="42" width="42" alt="Truck" src="https://shadlabs-images.s3.amazonaws.com/email-truck-V2.png" />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="color: white; padding-top: 15px; width: 135px">
+                                    Food Truck Schedule
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                    <td style="width:33.33%; text-align:center;vertical-align: middle;">
+                        <table class="content" role="presentation">
+                            <tr>
+                                <td>
+                                    <img height="42" width="42" alt="Parking Information" src="https://shadlabs-images.s3.amazonaws.com/email-parking-V2.png" />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="color: white; padding-top: 15px; width: 135px">
+                                    Parking Information
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                    <td style="width:33.33%; text-align:center;vertical-align: middle;">
+                        <table class="content" role="presentation">
+                            <tr>
+                                <td>
+                                    <img height="42" width="42" alt="Parking Information" src="https://shadlabs-images.s3.amazonaws.com/email-bolt-V2.png" />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="color: white; padding-top: 15px; width: 135px">
+                                    Inclement Weather Updates
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </td>
+    </tr>
+
+    <tr style="display:none;" class="images_desk">
+        <td style="width:100%; padding-top:75px;" width="100%" align="center">
+            <table style="width:100%" width="100%" align="center">
+                <tbody>
+                <tr class="three-columns">
+                    <td style="width:33.33%;text-align:center;vertical-align: middle;">
+                        <table class="content" role="presentation">
+                            <tr>
+                                <td>
+                                    <img height="42" width="42" alt="Parking Information" src="https://shadlabs-images.s3.amazonaws.com/email-bench-tree-V2.png" />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="color: white; padding-top: 15px; width: 135px">
+                                    On Campus Amenities
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                    <td style="width:33.33%; text-align:center;vertical-align: middle;">
+                        <table class="content" role="presentation">
+                            <tr>
+                                <td>
+                                    <img height="42" width="42" alt="Parking Information" src="https://shadlabs-images.s3.amazonaws.com/email-users-V2.png" />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="color: white; padding-top: 15px; width: 75px">
+                                    Contact Lists
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                    <td style="width:33.33%; text-align:center;vertical-align: middle;">
+                        <table class="content" role="presentation">
+                            <tr>
+                                <td>
+                                    <img height="42" width="42" alt="Facility Document Library" src="https://shadlabs-images.s3.amazonaws.com/email-file-V4.png" />
+                                </td>
+                            </tr>
+                            <tr>
+                                <td style="color: white; padding-top: 15px; width: 135px">
+                                    Facility Document Library
+                                </td>
+                            </tr>
+                        </table>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </td>
+    </tr>
+
+    <![endif]-->
+    <!--END DESKTOP IMAGES FOR OUTLOOK DESKTOP 2019 AND EARLIER-->
+
+    <tr>
+        <td class="divider" style="border-bottom: 1px solid #C7C7C7; padding-top: 48px;">
+            <p></p>
+        </td>
+    </tr>
+
+    <tr>
+        <td class="body_footer_1" style="padding-top: 24px; font-size: 16px; color: #B3B3B3; line-height: 20px;" align="center">
+            <div class="gmail-blend-screen">
+                <div class="gmail-blend-difference">
+                    <% if @body_3.present? %>
+                        <p><%= @body_3.html_safe %></p>
+                    <% end %>
+                </div>
+            </div>
+        </td>
+    </tr>
+
+    <tr>
+        <td class="body_footer_1_roll body_footer_1" style="padding: 24px 0px 0px 0px; font-size: 16px; color: #B3B3B3; line-height: 20px;" align="center">
+            <div class="gmail-blend-screen">
+                <div class="gmail-blend-difference">
+                    Lights, camera, and let’s roll!
+                </div>
+            </div>
+        </td>
+    </tr>
+
+    <tr >
+        <td>
+            <table width:"100%" style="width: 100%;" align="center">
+
+            <!--GENERAL CLIENTS STORE ICONS-->
+            <!--[if !mso]><!-->
+    <%# <tr>
+        <td align="center" class="three-columns_apps" style="padding-top: 8px; padding-right: 13px; padding-left: 13px; color: white;width: 100%;">
+
+
+
+            <table class="column apple_padding">
+                <tr>
+                    <td class="padding">
+                        <table class="content">
+                            <tr>
+                                <td>
+                                    <a href="{{appstore_url}}" rel="noreferrer noopener">
+                                        <img src="https://shadlabs-images.s3.amazonaws.com/appstore.png" width="196"/>
+                                    </a>
+                                </td>
+                            </tr>
+                        </table> <!--end of the content-->
+
+                    </td> <!--end padding-->
+                </tr>
+            </table> <!--end of the column 1-->
+
+
+            <table class="column playstore_padding">
+                <tr>
+                    <td class="padding">
+                        <table class="content">
+                            <tr>
+                                <td>
+                                    <a href="{{playstore_url}}" rel="noreferrer noopener">
+                                        <img src="https://shadlabs-images.s3.amazonaws.com/playstore_img.png" width="196"/>
+                                    </a>
+                                </td>
+                            </tr>
+                        </table> <!--end of the content-->
+
+                    </td> <!--end padding-->
+                </tr>
+            </table> <!--end of the column 2-->
+
+        </td> <!--end three col wrapper-->
+    </tr> %>
+    <!--<![endif]-->
+    <!--END GENERAL CLIENTS STORE ICONS-->
+
+    <!--STORE ICONS FOR OUTLOOK DESKTOP 2019 AND EARLIER-->
+    <!--[if mso]>
+    <tr>
+        <td style="width:100%; padding-top:56px;" width="100%">
+            <table style="width:100%" width="100%">
+                <tbody>
+                <tr class="three-columns">
+                    <td style="width:50%; text-align:right; padding-right: 24px; padding-left: 80px;">
+                        <a href="{{appstore_url}}" rel="noreferrer noopener">
+                            <img src="https://shadlabs-images.s3.amazonaws.com/appstore.png" width="196"/>
+                        </a>
+                    </td>
+                    <td style="width:50%; text-align:left">
+                        <a href="{{playstore_url}}" rel="noreferrer noopener">
+                            <img src="https://shadlabs-images.s3.amazonaws.com/playstore_img.png" width="196"/>
+                        </a>
+                    </td>
+                </tr>
+                </tbody>
+            </table>
+        </td>
+    </tr>
+    <![endif]-->
+    <!--END STORE ICONS FOR OUTLOOK DESKTOP 2019 AND EARLIER-->
+
+    </table>
+    </td>
+    </tr>
+
+    </table>
+    </td>
+    </tr>
+
+    <!-- FOOTER SECTION -->
+
+    <tr>
+        <td class="description copy_right" style="padding-top: 24px; color: #B3B3B3; font-weight: 400; text-align: center; font-size: 12px; line-height: 14px; margin: 0;" role="presentation">
+            <div class="gmail-blend-screen">
+                <div class="gmail-blend-difference">
+                    Copyright &copy; <%= Time.now.year %> All Rights Reserved
+                </div>
+            </div>
+        </td>
+    </tr>
+    <tr>
+        <td class="description sb" style="color: #FF5A00; font-weight: 400; text-align: center; font-size: 12px; line-height: 14px; padding: 8px 0px;" role="presentation">
+            Shadowbox Studios
+        </td>
+    </tr>
+    </table> <!-- End Main Class -->
+    <!--[if (gte mso 9)|(IE)]></td></tr></table><![endif]-->
+</center> <!-- End Wrapper -->
+</body>
+</html>

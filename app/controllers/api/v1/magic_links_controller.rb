@@ -17,14 +17,9 @@ class Api::V1::MagicLinksController < ActionController::API
       full_name = params[:name].to_s.strip
       first_name, last_name = full_name.split(" ", 2)
 
-      user = User.find_by(email: params[:email])
-      
-      if user
-        return render_error(message: "User already exists", status: :unprocessable_entity)
-      end
+      user = User.find_or_initialize_by(email: params[:email])
 
-      user = User.new(
-        email: params[:email],
+      user.assign_attributes(
         ghl_contact_id: params[:id],
         first_name: first_name,
         last_name: last_name || "",
@@ -38,8 +33,8 @@ class Api::V1::MagicLinksController < ActionController::API
       plan = Plan.create!(
         user: user,
         name: "temp_plan",
-        total_payment: params[:retainer_amount],
-        down_payment: params[:down_payment],
+        total_payment: params[:retainer_amount].to_f,
+        down_payment: params[:down_payment].to_f,
         monthly_payment: 0,
         status: :active
       )

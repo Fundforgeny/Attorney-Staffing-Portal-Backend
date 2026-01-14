@@ -4,6 +4,7 @@ class Firm < ApplicationRecord
 
   has_many :attorney_profiles
   has_many :client_profiles
+  has_one_attached :logo
 
   # Define which attributes are searchable by Ransack
   def self.ransackable_attributes(auth_object = nil)
