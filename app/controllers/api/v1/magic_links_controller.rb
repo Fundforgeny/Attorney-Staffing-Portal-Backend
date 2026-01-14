@@ -73,7 +73,7 @@ class Api::V1::MagicLinksController < ActionController::API
 
     return render_error(message: "Token and user_id are required", status: :bad_request) if token.blank? || user.blank?
 
-    plan = Plan.find_by(user_id: user.id, name: "temp_plan")
+    plan = Plan.where(user_id: user.id, name: "temp_plan").last
 
     return render_error(message: "User not found", status: :not_found) unless plan
 
