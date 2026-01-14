@@ -27,14 +27,17 @@ class Api::V1::MagicLinksController < ActionController::API
       )
       
       # Skip confirmation for API-created users
+      retainer_amount = params[:retainer_amount].to_s.gsub(/[$,]/, '').to_f
+      down_payment    = params[:down_payment].to_s.gsub(/[$,]/, '').to_f
+
       user.skip_confirmation!
       user.save!
 
       plan = Plan.create!(
         user: user,
         name: "temp_plan",
-        total_payment: params[:retainer_amount].to_f,
-        down_payment: params[:down_payment].to_f,
+        total_payment: retainer_amount,
+        down_payment: down_payment,
         monthly_payment: 0,
         status: :active
       )
