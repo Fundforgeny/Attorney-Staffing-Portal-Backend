@@ -5,10 +5,9 @@ ActiveAdmin.register Firm do
     selectable_column
     id_column
     column :name
-    column :description
     column :logo do |firm|
       if firm.logo.attached?
-        image_tag firm.logo.url, width: 50, height: 50
+        image_tag url_for(firm.logo), width: 50, height: 50
       else
         "No logo"
       end
@@ -26,10 +25,21 @@ ActiveAdmin.register Firm do
     attributes_table do
       row :id
       row :name
-      row :description
+      row :description do |firm|
+      content_tag :div,
+                  firm.description,
+                  style: "max-width: 300px;
+                          max-height: 80px;
+                          overflow-y: auto;
+                          white-space: pre-wrap;
+                          padding: 6px;
+                          border: 1px solid #ddd;
+                          border-radius: 4px;
+                          background-color: #fafafa;"
+    end
       row :logo do |firm|
         if firm.logo.attached?
-          image_tag firm.logo.url, width: 100, height: 100
+          image_tag url_for(firm.logo), width: 50, height: 50
         else
           "No logo"
         end
@@ -78,7 +88,6 @@ ActiveAdmin.register Firm do
         csv << [firm.name, firm.description, firm.logo.attached? ? firm.logo.url : "No logo", firm.primary_color, firm.secondary_color]
       end
     end
-    
     send_data csv_data, filename: "firms_#{Date.current}.csv"
   end
 end
