@@ -19,3 +19,5 @@ user.create_attorney_profile!(
 	created_at: "2025-12-25 09:20:11.275655000 +0000",
 	updated_at: "2025-12-25 09:20:11.275655000 +0000"
 )
+
+AdminUser.create!(email: 'admin@example.com', password: 'password', password_confirmation: 'password') if Rails.env.development?

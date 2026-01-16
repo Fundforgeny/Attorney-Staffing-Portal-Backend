@@ -1,9 +1,15 @@
 Rails.application.routes.draw do
+  devise_for :admin_users, ActiveAdmin::Devise.config
   # Define your application routes per the DSL in https://guides.rubyonrails.org/routing.html
 
   # Reveal health status on /up that returns 200 if the app boots with no exceptions, otherwise 500.
   # Can be used by load balancers and uptime monitors to verify that the app is live.
+  get "service-worker" => "rails/pwa#service_worker", as: :pwa_service_worker
+  get "manifest" => "rails/pwa#manifest", as: :pwa_manifest
+
   root to: redirect("/admin")
+  ActiveAdmin.routes(self)
+
   get "up" => "rails/health#show", as: :rails_health_check
 
   # Devise for users (API routes)
@@ -26,10 +32,7 @@ Rails.application.routes.draw do
     get "/admin/login", to: "admin/sessions#new", as: :new_admin_session
     post "/admin/login", to: "admin/sessions#create", as: :admin_session
     get "/admin/logout", to: "admin/sessions#destroy", as: :destroy_admin_session
-  end
-
-  # Active Admin routes
-  ActiveAdmin.routes(self)
+  end 
 
   # config/routes.rb
   namespace :api do
@@ -49,4 +52,8 @@ Rails.application.routes.draw do
 
   # Defines the root path route ("/")
   # root "posts#index"
+  require "sidekiq/web"
+  authenticate :admin_user do
+    mount Sidekiq::Web => "/sidekiq"
+  end
 end

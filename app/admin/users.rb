@@ -1,17 +1,11 @@
-ActiveAdmin.register User, as: "Users" do
-  permit_params :email, :first_name, :last_name, :user_type, :phone, :dob, :address_street, :city, :state, :country, :annual_salary, :contact_source, firm_ids: []
+ActiveAdmin.register User do
+  # Permit Params
+  permit_params :email, :first_name, :last_name, :user_type, :phone, :dob, 
+                :address_street, :city, :state, :country, :annual_salary, 
+                :contact_source, :password, :password_confirmation, 
+                :firm_id
 
-  # Remove password fields from edit form (handled separately)
-  controller do
-    def update
-      if params[:user][:password].blank?
-        params[:user].delete(:password)
-        params[:user].delete(:password_confirmation)
-      end
-      super
-    end
-  end
-
+  # Views
   index do
     selectable_column
     id_column
@@ -19,78 +13,134 @@ ActiveAdmin.register User, as: "Users" do
     column :first_name
     column :last_name
     column :user_type do |user|
-      status_tag(user.user_type.to_s.humanize, class: user.user_type)
+      status_tag user.user_type
     end
     column :phone
     column :firm do |user|
-      user.primary_firm&.name || "No Firm"
+      user.firm&.name || "No Firm"
     end
     actions
   end
 
+  # Show
   show do
     attributes_table do
       row :id
-      row :email
       row :first_name
       row :last_name
+      row :email
       row :user_type do |user|
-        status_tag(user.user_type.to_s.humanize, class: user.user_type)
+        status_tag user.user_type
       end
       row :phone
-      row :dob
+      row :is_verfied
+
       row :address_street
       row :city
       row :state
+      row :postal_code
       row :country
+    
+      row :firm do |user|
+        user.firm&.name || "No Firm Assigned"
+      end
       row :annual_salary
-      row :contact_source
-      row :firms do |user|
-        user.firms.map(&:name).join(", ") || "No Firms"
+    end
+
+    panel "Payment Method" do
+      if user.payment_method.present?
+        table_for [user.payment_method] do
+          column :provider
+          column :card_brand
+          column :card_number
+          column :last4
+          column :exp_month
+          column :exp_year
+          column :cardholder_name
+          column :created_at
+        end
+      else
+        para "No payment method added"
+      end
+    end
+
+    # panel "Payments" do
+    #   payments = Payment.where(user_id: user.id).order(created_at: :desc)
+
+    #   if payments.any?
+    #     table_for payments do
+    #       column :plan_id
+    #       column :payment_type do |payment|
+    #         payment.payment_type.humanize
+    #       end
+    #       column :payment_amount
+    #       column :transaction_fee
+    #       column :total_payment_including_fee
+    #       column :status do |payment|
+    #         status_tag payment.status
+    #       end
+    #       column :scheduled_at
+    #       column :paid_at
+    #       column :created_at
+    #     end
+    #   else
+    #     para "No payments found for this user"
+    #   end
+    # end
+
+    panel "Plans for this User" do
+      if user.plans.any?
+        table_for user.plans do
+          column :name
+          column :duration
+          column :total_payment
+          column :total_interest_amount
+          column :monthly_payment
+          column :monthly_interest_amount
+          column :down_payment
+          column :status do |plan|
+            status_tag plan.status
+          end
+          column :created_at
+        end
+      else
+        para "No plans found"
       end
     end
   end
 
-  filter :email
-  filter :first_name
-  filter :last_name
-  filter :user_type, as: :select
-  filter :phone
-  filter :firms
-
+  # Form
   form do |f|
-    f.inputs "User Information" do
-      f.input :email
+    f.inputs "Basic Information" do
+      f.input :email, label: "Email", input_html: { autocomplete: "new-email" }
       f.input :first_name
       f.input :last_name
       f.input :user_type, as: :select, collection: User.user_types.keys.map { |type| [type.to_s.humanize, type] }
       f.input :phone
       f.input :dob, as: :date_picker
+    end
+
+    f.inputs "Location Details" do
       f.input :address_street
       f.input :city
       f.input :state
       f.input :country
+    end
+
+    f.inputs "Professional Info" do
       f.input :annual_salary
       f.input :contact_source
-      f.input :firm_ids, as: :select, collection: Firm.all.pluck(:name, :id)
+      f.input :firm_id, as: :select, collection: Firm.all.map { |f| [f.name, f.id] }, 
+              label: "Firm", include_blank: "No Firm"
     end
-    
-    f.inputs "Password (leave blank to keep current password)" do
-      f.input :password
-      f.input :password_confirmation
+
+    f.inputs "Security" do
+      f.input :password, 
+              hint: "Leave blank to keep current password",
+              input_html: { autocomplete: "new-password" }
+      f.input :password_confirmation, label: "Password confirmation",
+                                      input_html: { autocomplete: "new-password" }
     end
-    
     f.actions
-  end
-
-  # Custom action to reset password
-  action_item :view, only: :show do
-    link_to "Reset Password", reset_password_admin_user_path(resource), method: :patch, 
-            data: { confirm: "Are you sure you want to reset this user's password?" }
-  end
-
-  member_action :reset_password, method: :patch do
-    resource.update(password: SecureRandom.hex(8), password_confirmation: nil)
-    redirect_to admin_user_path(resource), notice: "Password has been reset. New password: #{resource.password}"
   end
 end
