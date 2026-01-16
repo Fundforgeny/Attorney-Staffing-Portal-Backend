@@ -104,13 +104,17 @@ class Api::V1::PaymentsController < ActionController::API
         return render_error(message: "Plan does not belong to user", status: :forbidden)
       end
 
-      if user.stripe_customer_id.blank?
-        customer = Stripe::Customer.create({
-          email: user.email,
-          name: user.full_name,
-          metadata: { user_id: user.id }
-        })
-        user.update!(stripe_customer_id: customer.id)
+      if user.stripe_customer_id.present?
+        begin
+          Stripe::Customer.retrieve(user.stripe_customer_id)
+        rescue Stripe::InvalidRequestError => e
+          if e.message.include?("No such customer")
+            create_new_stripe_customer(user)
+          else
+            raise e
+        end
+      else
+        create_new_stripe_customer(user)
       end
 
       puts "User found with id: #{user.id}"
@@ -367,5 +371,14 @@ class Api::V1::PaymentsController < ActionController::API
       paid_at: payment.paid_at,
       charge_id: payment.charge_id
     }
+  end
+
+  def create_new_stripe_customer(user)
+    customer = Stripe::Customer.create({
+      email: user.email,
+      name: user.full_name,
+      metadata: { user_id: user.id }
+    })
+    user.update!(stripe_customer_id: customer.id)
   end
 end
