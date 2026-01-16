@@ -112,6 +112,7 @@ class Api::V1::PaymentsController < ActionController::API
             create_new_stripe_customer(user)
           else
             raise e
+          end
         end
       else
         create_new_stripe_customer(user)
