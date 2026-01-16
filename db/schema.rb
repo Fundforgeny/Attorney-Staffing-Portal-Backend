@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_01_15_153348) do
+ActiveRecord::Schema[8.0].define(version: 2026_01_16_133008) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -261,6 +261,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_15_153348) do
     t.string "magic_link_token"
     t.string "ghl_contact_id"
     t.bigint "firm_id"
+    t.string "stripe_customer_id"
     t.index ["firm_id"], name: "index_users_on_firm_id"
     t.index ["user_type"], name: "index_users_on_user_type"
   end

@@ -89,6 +89,75 @@ class Api::V1::PaymentsController < ActionController::API
     end
   end
 
+  def create_payment_session
+    begin
+      required_params = [:user_id, :plan_id]
+      missing_params = required_params.select { |param| params[param].blank? }
+      unless missing_params.empty?
+        return render_error(message: "Missing parameters: #{missing_params.join(', ')}", status: :bad_request)
+      end
+
+      user = User.find(params[:user_id])
+      plan = Plan.find(params[:plan_id])
+
+      unless plan.user_id == user.id
+        return render_error(message: "Plan does not belong to user", status: :forbidden)
+      end
+
+      if user.stripe_customer_id.blank?
+        customer = Stripe::Customer.create({
+          email: user.email,
+          name: user.full_name,
+          metadata: { user_id: user.id }
+        })
+        user.update!(stripe_customer_id: customer.id)
+      end
+
+      puts "User found with id: #{user.id}"
+      puts "Plan found with id: #{plan.id}"
+
+      payment_type = plan&.duration > 0 ? "down_payment" : "full_payment"
+      payment = Payment.find_by(user: user, plan: plan, payment_type: payment_type)
+      puts "Payment record: #{payment.id} and plan_type: #{payment.payment_type} and amount: #{payment.total_payment_including_fee}"
+
+      unless payment && payment.total_payment_including_fee.present?
+        return render_error(message: "Payment not found", status: :not_found)
+      end
+
+      intent_data = {
+        amount: (payment.total_payment_including_fee * 100).to_i,
+        currency: 'usd',
+        customer: user.stripe_customer_id,
+        description: payment.payment_type,
+        receipt_email: user.email,
+        metadata: {
+          user_id: user.id,
+          plan_id: plan.id,
+          payment_type: payment_type
+        }
+      }
+      intent_data[:setup_future_usage] = 'off_session' if payment_type == "down_payment"
+
+      intent = Stripe::PaymentIntent.create(intent_data)
+      payment.update(charge_id: intent.id, status: :processing) if intent
+
+      render_success(
+        data: {
+          client_secret: intent.client_secret
+        },
+        message: "Payment intent created successfully",
+        status: :created
+      )
+
+    rescue Stripe::StripeError => e
+      render_error(message: e.message)
+    rescue ActiveRecord::RecordNotFound => e
+      render_error(message: "User or plan not found", status: :not_found)
+    rescue StandardError => e
+      render_error(message: "Something went wrong: #{e.message}")
+    end
+  end
+
   def save_signature
     begin
       # Validate required parameters
