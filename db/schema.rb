@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_01_16_133008) do
+ActiveRecord::Schema[8.0].define(version: 2026_01_16_143545) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -255,7 +255,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_16_133008) do
     t.boolean "is_verfied", default: true
     t.integer "annual_salary"
     t.integer "user_type", default: 0, null: false
-    t.integer "payment_method_id"
     t.string "stripe_verification_status"
     t.string "stripe_verification_session_id"
     t.string "magic_link_token"
@@ -279,7 +278,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_16_133008) do
   add_foreign_key "client_profiles", "users"
   add_foreign_key "firm_users", "firms"
   add_foreign_key "firm_users", "users"
-  add_foreign_key "payment_methods", "users"
+  add_foreign_key "payment_methods", "users", on_delete: :cascade
   add_foreign_key "payments", "payment_methods"
   add_foreign_key "payments", "plans"
   add_foreign_key "payments", "users"
