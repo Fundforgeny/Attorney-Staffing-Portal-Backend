@@ -25,7 +25,6 @@ ActiveAdmin.register Agreement do
       row :plan
       row :signed_at
       row :created_at
-      row :updated_at
 
       # 🔹 PDF LINK
       row "Agreement PDF" do |agreement|
@@ -50,19 +49,4 @@ ActiveAdmin.register Agreement do
       end
     end
   end
-
-
-  filter :user
-  filter :plan
-  filter :signed_at
-  filter :created_at
-
-  # form do |f|
-  #   f.inputs "Agreement Details" do
-  #     f.input :user
-  #     f.input :plan
-  #     f.input :signed_at, as: :datetime_picker
-  #   end
-  #   f.actions
-  # end
 end

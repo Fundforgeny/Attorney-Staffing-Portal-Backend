@@ -28,7 +28,10 @@ Devise.setup do |config|
   config.parent_controller = 'ApplicationController'
 
   # Configure the class responsible to send e-mails.
-  config.mailer = 'CustomDeviseMailer'
+  config.mailer_sender = "no-reply@staffingportal.com"
+
+  # Configure the class responsible to send e-mails.
+  config.mailer = "UserMailer"
 
   # Configure the parent class responsible to send e-mails.
   # config.parent_mailer = 'ActionMailer::Base'

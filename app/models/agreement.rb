@@ -1,6 +1,6 @@
 class Agreement < ApplicationRecord
 	belongs_to :user
-	belongs_to :plan
+	belongs_to :plan, dependent: :destroy
 
 	has_one_attached :pdf
 	has_one_attached :signature

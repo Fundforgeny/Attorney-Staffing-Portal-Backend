@@ -1,5 +1,5 @@
 ActiveAdmin.register Payment do
-  permit_params :user_id, :plan_id, :payment_method_id,:payment_type, :payment_amount, :status,:charge_id, :scheduled_at, :paid_at,:total_payment_including_fee, :transaction_fee
+  permit_params :user_id, :plan_id, :payment_method_id,:payment_type, :payment_amount, :status, :scheduled_at, :paid_at,:total_payment_including_fee, :transaction_fee
 
   index do
     selectable_column
@@ -33,20 +33,11 @@ ActiveAdmin.register Payment do
       row :status do |payment|
         status_tag payment.status
       end
-      row :charge_id
       row :scheduled_at
       row :paid_at
       row :created_at
-      row :updated_at
     end
   end
-
-  filter :user
-  filter :plan
-  filter :payment_method
-  filter :payment_type
-  filter :status
-  filter :created_at
 
   form do |f|
     f.inputs "Payment Details" do
@@ -58,7 +49,6 @@ ActiveAdmin.register Payment do
       f.input :total_payment_including_fee
       f.input :transaction_fee
       f.input :status
-      f.input :charge_id
       f.input :scheduled_at, as: :datetime_picker
       f.input :paid_at, as: :datetime_picker
     end

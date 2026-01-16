@@ -34,7 +34,7 @@ class Users::SessionsController < Devise::SessionsController
       # --- Failed Login Path ---
       # This block is executed if `warden.authenticate` returns a falsy value.
       # Use the standardized helper for a consistent error response.
-      render_resource_errors(resource)
+      render json: { error: "Invalid email or password." }, status: :unauthorized
     end
 
   # Rescues from `ActionController::ParameterMissing` errors, which are raised
