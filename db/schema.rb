@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_01_16_143545) do
+ActiveRecord::Schema[8.0].define(version: 2026_01_19_115803) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -223,6 +223,7 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_16_143545) do
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
+    t.string "magic_link_token"
     t.index ["user_id"], name: "index_plans_on_user_id"
   end
 
@@ -257,7 +258,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_16_143545) do
     t.integer "user_type", default: 0, null: false
     t.string "stripe_verification_status"
     t.string "stripe_verification_session_id"
-    t.string "magic_link_token"
     t.string "ghl_contact_id"
     t.bigint "firm_id"
     t.string "stripe_customer_id"

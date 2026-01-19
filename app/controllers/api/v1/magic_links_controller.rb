@@ -33,16 +33,23 @@ class Api::V1::MagicLinksController < ActionController::API
       user.skip_confirmation!
       user.save!
 
-      plan = Plan.create!(
-        user: user,
-        name: "temp_plan",
-        total_payment: retainer_amount,
-        down_payment: down_payment,
-        monthly_payment: 0,
-        status: :active
-      )
+      plan = Plan.where(user_id: user.id, name: "temp_plan").where.not(magic_link_token: [nil, ""])
+      if plan.exists?
+        plan = plan.last
+        magic_link_token = plan.magic_link_token
+      else
+        magic_link_token = generate_magic_link_token(user)
 
-      magic_link_token = generate_magic_link_token(user)
+        plan = Plan.create!(
+          user: user,
+          name: "temp_plan",
+          total_payment: retainer_amount,
+          down_payment: down_payment,
+          monthly_payment: 0,
+          status: :active,
+          magic_link_token: magic_link_token
+        )
+      end
 
       frontend_url = "https://payments.fundforge.net/pay"
       magic_link = "#{frontend_url}?token=#{magic_link_token}"
@@ -54,7 +61,7 @@ class Api::V1::MagicLinksController < ActionController::API
           plan_id: plan.id,
           magic_link: magic_link
         },
-        message: "User created successfully with magic link",
+        message: "User and plan created successfully with magic link",
         status: :created
       )
       return
@@ -69,13 +76,13 @@ class Api::V1::MagicLinksController < ActionController::API
 
   def validate
     token = params[:token]
-    user = User.find_by(magic_link_token: token)
+    return render_error(message: "Token and user_id are required", status: :bad_request) if token.blank?
 
-    return render_error(message: "Token and user_id are required", status: :bad_request) if token.blank? || user.blank?
+    plan = Plan.find_by(magic_link_token: token)
+    return render_error(message: "Plan not found", status: :bad_request) if plan.blank?
 
-    plan = Plan.where(user_id: user.id, name: "temp_plan").last
-
-    return render_error(message: "User not found", status: :not_found) unless plan
+    user = User.find_by(id: plan.user_id)
+    return render_error(message: "User not found", status: :not_found) if user.blank?
 
     render_success(
       data: {
@@ -96,11 +103,6 @@ class Api::V1::MagicLinksController < ActionController::API
 
   def generate_magic_link_token(user)
     token = SecureRandom.urlsafe_base64(32)
-
-    user.update!(
-      magic_link_token: token,
-    )
-
     token
   end
 end
