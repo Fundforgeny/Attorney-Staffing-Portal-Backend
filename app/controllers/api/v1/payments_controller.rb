@@ -16,7 +16,7 @@ class Api::V1::PaymentsController < ActionController::API
 
       agreement = Agreement.create(user: user, plan: plan)
 
-      agreement.fund_forge_pdf.attach(
+      agreement.pdf.attach(
         io: File.open(fund_forge_pdf_path),
         filename: fund_forge_filename,
         content_type: "application/pdf"
@@ -29,7 +29,7 @@ class Api::V1::PaymentsController < ActionController::API
       )
       
       # Generate S3 public URL
-      fund_forge_agreement_url = agreement.fund_forge_pdf.url
+      fund_forge_agreement_url = agreement.pdf.url
       engagement_agreement_url = agreement.engagement_pdf.url
 
       render_success(
@@ -180,6 +180,9 @@ class Api::V1::PaymentsController < ActionController::API
     end
   end
 
+
+  require "base64"
+  require "stringio"
   def save_signature
     begin
       # Validate required parameters
@@ -223,6 +226,17 @@ class Api::V1::PaymentsController < ActionController::API
           io: temp_file,
           filename: filename,
           content_type: "image/png"
+        )
+
+        # NEW STAMPING LOGIC
+        pdf_coordinates = {
+        "pdf" => [140, 540],
+        "engagement_pdf" => [140, 770]
+        }
+        ProcessSignedAgreementJob.perform_later(
+        agreement.id, 
+        agreement.signature.blob.id, 
+        pdf_coordinates
         )
         
         # Update agreement status if needed
