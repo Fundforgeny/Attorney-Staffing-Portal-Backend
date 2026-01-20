@@ -8,26 +8,43 @@ class Api::V1::PaymentsController < ActionController::API
       plan = create_plan_instance(user)
 
       # Generate the filled agreement PDF (returns a file path)
-      pdf_path = AgreementPdfGenerator.new(user, plan).generate
-      filename = "fund_forge_agreement_#{plan.id}.pdf"
+      fund_forge_pdf_path = AgreementPdfGenerator.new(user, plan).generate
+      fund_forge_filename = "fund_forge_agreement_#{plan.id}.pdf"
+
+      engagement_pdf_path = EngagementPdfGenerator.new(user, plan).generate
+      engagement_filename = "engagement_agreement_#{plan.id}.pdf"
+
       agreement = Agreement.create(user: user, plan: plan)
 
-      agreement.pdf.attach(
-        io: File.open(pdf_path),
-        filename: filename,
+      agreement.fund_forge_pdf.attach(
+        io: File.open(fund_forge_pdf_path),
+        filename: fund_forge_filename,
+        content_type: "application/pdf"
+      )
+
+      agreement.engagement_pdf.attach(
+        io: File.open(engagement_pdf_path),
+        filename: engagement_filename,
         content_type: "application/pdf"
       )
       
       # Generate S3 public URL
-      agreement_url = agreement.pdf.url
+      fund_forge_agreement_url = agreement.fund_forge_pdf.url
+      engagement_agreement_url = agreement.engagement_pdf.url
 
       render_success(
         data: {
           user_id: user.id,
           plan_id: plan.id,
           agreement_id: agreement.id,
-          agreement_url: agreement_url,
-          agreement_filename: filename,
+          fund_forge_agreement: {
+          url: fund_forge_agreement_url,
+          filename: fund_forge_filename,
+          },
+          engagement_agreement: {
+          url: engagement_agreement_url,
+          filename: engagement_filename,
+          },
         },
         message: "User and plan created successfully with signed agreement",
         status: :created

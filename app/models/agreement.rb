@@ -2,7 +2,8 @@ class Agreement < ApplicationRecord
 	belongs_to :user
 	belongs_to :plan
 
-	has_one_attached :pdf
+	has_one_attached :fund_forge_pdf
+  has_one_attached :engagement_pdf
 	has_one_attached :signature
 
 	def self.ransackable_associations(auth_object = nil)
