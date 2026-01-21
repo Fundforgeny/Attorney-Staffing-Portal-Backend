@@ -7,18 +7,43 @@ ActiveAdmin.register Agreement do
     column :user
     column :plan
     column "Fund Forge PDF" do |agreement|
-      if agreement.pdf.attached?
-        link_to "View PDF",rails_blob_path(agreement.pdf, disposition: "inline"),  target: "_blank"
-      else
-        status_tag "No PDF", class: "warning"
-      end
+    if agreement.pdf.attached?
+    filename = agreement.pdf.filename.to_s
+    
+    if filename.start_with?("signed_")
+      link_to "View PDF", rails_blob_path(agreement.pdf, disposition: "inline"), 
+              target: "_blank"
+
+    elsif agreement.signed_at.present?
+      status_tag "Processing...", class: "important"
+
+    else
+      link_to "View PDF", rails_blob_path(agreement.pdf, disposition: "inline"), 
+              target: "_blank"
     end
+    else
+      status_tag "No PDF", class: "warning"
+    end
+    end
+
     column "Engagement PDF" do |agreement|
-      if agreement.engagement_pdf.attached?
-        link_to "View PDF",rails_blob_path(agreement.engagement_pdf, disposition: "inline"),  target: "_blank"
-      else
-        status_tag "No PDF", class: "warning"
-      end
+    if agreement.engagement_pdf.attached?
+    filename = agreement.engagement_pdf.filename.to_s
+    
+    if filename.start_with?("signed_")
+      link_to "View PDF", rails_blob_path(agreement.engagement_pdf, disposition: "inline"), 
+              target: "_blank"
+
+    elsif agreement.signed_at.present?
+      status_tag "Processing...", class: "important"
+
+    else
+      link_to "View PDF", rails_blob_path(agreement.engagement_pdf, disposition: "inline"), 
+              target: "_blank"
+    end
+    else
+      status_tag "No PDF", class: "warning"
+    end
     end
     column :signed_at
     column :created_at

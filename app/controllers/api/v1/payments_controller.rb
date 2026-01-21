@@ -230,13 +230,13 @@ class Api::V1::PaymentsController < ActionController::API
 
         # NEW STAMPING LOGIC
         pdf_coordinates = {
-        "pdf" => [140, 540],
-        "engagement_pdf" => [140, 770]
+        "pdf" => [130, 430],
+        "engagement_pdf" => [130, 670]
         }
-        ProcessSignedAgreementJob.perform_later(
-        agreement.id, 
-        agreement.signature.blob.id, 
-        pdf_coordinates
+        ::ProcessSignedAgreementWorker.perform_async(
+          agreement.id, 
+          agreement.signature.blob.id, 
+          pdf_coordinates
         )
         
         # Update agreement status if needed
