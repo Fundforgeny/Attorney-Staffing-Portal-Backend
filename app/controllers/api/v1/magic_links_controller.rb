@@ -34,6 +34,7 @@ class Api::V1::MagicLinksController < ActionController::API
       user.save!
 
       plan = Plan.where(user_id: user.id, name: "temp_plan").where.not(magic_link_token: [nil, ""])
+
       if plan.exists?
         plan = plan.last
         magic_link_token = plan.magic_link_token

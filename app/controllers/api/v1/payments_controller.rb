@@ -8,22 +8,23 @@ class Api::V1::PaymentsController < ActionController::API
       plan = create_plan_instance(user)
 
       # Generate the filled agreement PDF (returns a file path)
-      fund_forge_pdf_path = AgreementPdfGenerator.new(user, plan).generate
+      generator = PdfGeneratorService.new(user, plan)
+      fund_forge_path = generator.generate_fund_forge
       fund_forge_filename = "fund_forge_agreement_#{plan.id}.pdf"
 
-      engagement_pdf_path = EngagementPdfGenerator.new(user, plan).generate
+      engagement_path = generator.generate_engagement
       engagement_filename = "engagement_agreement_#{plan.id}.pdf"
 
       agreement = Agreement.create(user: user, plan: plan)
 
       agreement.pdf.attach(
-        io: File.open(fund_forge_pdf_path),
+        io: File.open(fund_forge_path),
         filename: fund_forge_filename,
         content_type: "application/pdf"
       )
 
       agreement.engagement_pdf.attach(
-        io: File.open(engagement_pdf_path),
+        io: File.open(engagement_path),
         filename: engagement_filename,
         content_type: "application/pdf"
       )
