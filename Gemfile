@@ -1,5 +1,8 @@
 source "https://rubygems.org"
 
+gem 'prawn'       # Used to create the PDF layer for the signature image
+gem 'combine_pdf' # Used to merge the signature layer with your original PDF
+
 # Bundle edge Rails instead: gem "rails", github: "rails/rails", branch: "main"
 gem "rails", "~> 8.0.3"
 # The modern asset pipeline for Rails [https://github.com/rails/propshaft]

@@ -8,26 +8,44 @@ class Api::V1::PaymentsController < ActionController::API
       plan = create_plan_instance(user)
 
       # Generate the filled agreement PDF (returns a file path)
-      pdf_path = AgreementPdfGenerator.new(user, plan).generate
-      filename = "fund_forge_agreement_#{plan.id}.pdf"
+      generator = PdfGeneratorService.new(user, plan)
+      fund_forge_path = generator.generate_fund_forge
+      fund_forge_filename = "fund_forge_agreement_#{plan.id}.pdf"
+
+      engagement_path = generator.generate_engagement
+      engagement_filename = "engagement_agreement_#{plan.id}.pdf"
+
       agreement = Agreement.create(user: user, plan: plan)
 
       agreement.pdf.attach(
-        io: File.open(pdf_path),
-        filename: filename,
+        io: File.open(fund_forge_path),
+        filename: fund_forge_filename,
+        content_type: "application/pdf"
+      )
+
+      agreement.engagement_pdf.attach(
+        io: File.open(engagement_path),
+        filename: engagement_filename,
         content_type: "application/pdf"
       )
       
       # Generate S3 public URL
-      agreement_url = agreement.pdf.url
+      fund_forge_agreement_url = agreement.pdf.url
+      engagement_agreement_url = agreement.engagement_pdf.url
 
       render_success(
         data: {
           user_id: user.id,
           plan_id: plan.id,
           agreement_id: agreement.id,
-          agreement_url: agreement_url,
-          agreement_filename: filename,
+          fund_forge_agreement: {
+          url: fund_forge_agreement_url,
+          filename: fund_forge_filename,
+          },
+          engagement_agreement: {
+          url: engagement_agreement_url,
+          filename: engagement_filename,
+          },
         },
         message: "User and plan created successfully with signed agreement",
         status: :created
@@ -163,6 +181,9 @@ class Api::V1::PaymentsController < ActionController::API
     end
   end
 
+
+  require "base64"
+  require "stringio"
   def save_signature
     begin
       # Validate required parameters
@@ -206,6 +227,17 @@ class Api::V1::PaymentsController < ActionController::API
           io: temp_file,
           filename: filename,
           content_type: "image/png"
+        )
+
+        # NEW STAMPING LOGIC
+        pdf_coordinates = {
+        "pdf" => [130, 430],
+        "engagement_pdf" => [130, 670]
+        }
+        ::ProcessSignedAgreementWorker.perform_async(
+          agreement.id, 
+          agreement.signature.blob.id, 
+          pdf_coordinates
         )
         
         # Update agreement status if needed

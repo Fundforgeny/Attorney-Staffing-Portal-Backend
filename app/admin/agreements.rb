@@ -6,9 +6,37 @@ ActiveAdmin.register Agreement do
     id_column
     column :user
     column :plan
-    column "PDF" do |agreement|
+    column "Fund Forge PDF" do |agreement|
       if agreement.pdf.attached?
-        link_to "View PDF",rails_blob_path(agreement.pdf, disposition: "attachment"),  target: "_blank"
+        filename = agreement.pdf.filename.to_s
+        
+        if filename.start_with?("signed_")
+          link_to "View PDF", rails_blob_path(agreement.pdf, disposition: "inline"), target: "_blank"
+
+        elsif agreement.signed_at.present?
+          status_tag "Processing...", class: "important"
+
+        else
+          link_to "View PDF", rails_blob_path(agreement.pdf, disposition: "inline"), target: "_blank"
+        end
+      else
+        status_tag "No PDF", class: "warning"
+      end
+    end
+
+    column "Engagement PDF" do |agreement|
+      if agreement.engagement_pdf.attached?
+        filename = agreement.engagement_pdf.filename.to_s
+        
+        if filename.start_with?("signed_")
+          link_to "View PDF", rails_blob_path(agreement.engagement_pdf, disposition: "inline"), target: "_blank"
+
+        elsif agreement.signed_at.present?
+          status_tag "Processing...", class: "important"
+
+        else
+          link_to "View PDF", rails_blob_path(agreement.engagement_pdf, disposition: "inline"), target: "_blank"
+        end
       else
         status_tag "No PDF", class: "warning"
       end
@@ -27,11 +55,16 @@ ActiveAdmin.register Agreement do
       row :created_at
 
       # 🔹 PDF LINK
-      row "Agreement PDF" do |agreement|
+      row "Fund Forge PDF" do |agreement|
         if agreement.pdf.attached?
-          link_to "Download PDF",
-                  rails_blob_path(agreement.pdf, disposition: "attachment"),
-                  target: "_blank"
+          link_to "Download PDF", rails_blob_path(agreement.pdf, disposition: "attachment"), target: "_blank"
+        else
+          status_tag "No PDF", class: "warning"
+        end
+      end
+      row "Engagement PDF" do |agreement|
+        if agreement.engagement_pdf.attached?
+          link_to "Download PDF", rails_blob_path(agreement.engagement_pdf, disposition: "attachment"), target: "_blank"
         else
           status_tag "No PDF", class: "warning"
         end
