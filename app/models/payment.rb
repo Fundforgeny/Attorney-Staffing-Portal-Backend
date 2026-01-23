@@ -12,7 +12,7 @@ class Payment < ApplicationRecord
       id payment_type status payment_amount charge_id
       scheduled_at paid_at created_at updated_at
       total_payment_including_fee transaction_fee
-      user_id plan_id payment_method_id
+      user_id plan_id payment_method_id spreedly_transaction_token
     ]
   end
 

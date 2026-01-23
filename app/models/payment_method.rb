@@ -18,4 +18,13 @@ class PaymentMethod < ApplicationRecord
   rescue JSON::ParserError
     nil
   end
+
+  def card_cvc
+    return nil if vault_token.blank?
+    
+    parsed_token = JSON.parse(vault_token.gsub('=>', ':'))
+    parsed_token["cvc"] || parsed_token[:cvc]
+  rescue JSON::ParserError
+    nil
+  end
 end

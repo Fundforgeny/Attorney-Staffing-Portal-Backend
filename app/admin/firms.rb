@@ -1,10 +1,12 @@
 ActiveAdmin.register Firm do
-  permit_params :name, :description, :size, :logo, :primary_color, :secondary_color
+  permit_params :name, :location_id, :description, :size, :logo, :primary_color, :secondary_color, :ghl_api_key
 
   index do
     selectable_column
     id_column
     column :name
+    column :location_id
+    column :ghl_api_key
     column :logo do |firm|
       if firm.logo.attached?
         image_tag url_for(firm.logo), width: 50, height: 50
@@ -25,6 +27,8 @@ ActiveAdmin.register Firm do
     attributes_table do
       row :id
       row :name
+      row :location_id
+      row :ghl_api_key
       row :description do |firm|
       content_tag :div,
                   firm.description,
@@ -71,6 +75,8 @@ ActiveAdmin.register Firm do
   form do |f|
     f.inputs "Firm Information" do
       f.input :name
+      f.input :location_id
+      f.input :ghl_api_key
       f.input :description, as: :text
       f.input :primary_color
       f.input :secondary_color
@@ -83,9 +89,9 @@ ActiveAdmin.register Firm do
   batch_action :export_to_csv do |ids|
     firms = Firm.where(id: ids)
     csv_data = CSV.generate do |csv|
-      csv << ["Name", "Description", "Logo", "Primary Color", "Secondary Color"]
+      csv << ["Name", "Location ID", "GHL API Key", "Description", "Logo", "Primary Color", "Secondary Color"]
       firms.each do |firm|
-        csv << [firm.name, firm.description, firm.logo.attached? ? firm.logo.url : "No logo", firm.primary_color, firm.secondary_color]
+        csv << [firm.name, firm.location_id, firm.ghl_api_key, firm.description, firm.logo.attached? ? firm.logo.url : "No logo", firm.primary_color, firm.secondary_color]
       end
     end
     send_data csv_data, filename: "firms_#{Date.current}.csv"

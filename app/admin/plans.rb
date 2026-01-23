@@ -1,5 +1,6 @@
 ActiveAdmin.register Plan do
   permit_params :name,:duration,:total_payment,:total_interest_amount,:monthly_payment,:monthly_interest_amount,:down_payment,:status,:user_id
+  
   index do
     selectable_column
     id_column
@@ -16,6 +17,7 @@ ActiveAdmin.register Plan do
   filter :user
   filter :status
   filter :created_at
+
   show do
     attributes_table do
       row :id
@@ -54,6 +56,7 @@ ActiveAdmin.register Plan do
       end
     end
   end
+
   form do |f|
     f.semantic_errors
     f.inputs "Plan Details" do
