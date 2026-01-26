@@ -40,11 +40,11 @@ Rails.application.routes.draw do
       post 'payments/create_user_plan', to: 'payments#create_user_plan'
       post 'magic_links/create_user_with_magic_link', to: 'magic_links#create_user_with_magic_link'
       post 'payments/checkout', to: 'payments#checkout'
-      # post 'payments/create_payment_session', to: 'payments#create_payment_session'
+      post 'payments/create_payment_session', to: 'payments#create_payment_session'
       post 'payments/create_verification_session', to: 'payments#create_verification_session'
       post 'payments/save_signature', to: 'payments#save_signature'
-      # post 'stripe_webhooks', to: 'stripe_webhooks#receive'
-      # post 'stripe_webhooks/update_payment_status', to: 'stripe_webhooks#update_payment_status'
+      post 'stripe_webhooks', to: 'stripe_webhooks#receive'
+      post 'stripe_webhooks/update_payment_status', to: 'stripe_webhooks#update_payment_status'
       post 'magic_links/validate', to: 'magic_links#validate'
     end
   end

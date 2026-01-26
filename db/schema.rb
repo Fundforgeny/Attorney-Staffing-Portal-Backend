@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_01_23_125418) do
+ActiveRecord::Schema[8.0].define(version: 2026_01_22_160855) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -210,7 +210,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_23_125418) do
     t.datetime "updated_at", null: false
     t.decimal "total_payment_including_fee"
     t.decimal "transaction_fee"
-    t.string "spreedly_transaction_token"
     t.index ["payment_method_id"], name: "index_payments_on_payment_method_id"
     t.index ["plan_id"], name: "index_payments_on_plan_id"
     t.index ["user_id"], name: "index_payments_on_user_id"

@@ -1,6 +1,11 @@
 ActiveAdmin.register Firm do
   permit_params :name, :location_id, :description, :size, :logo, :primary_color, :secondary_color, :ghl_api_key
 
+  filter :name
+  filter :location_id
+  filter :ghl_api_key
+  filter :created_at
+
   index do
     selectable_column
     id_column

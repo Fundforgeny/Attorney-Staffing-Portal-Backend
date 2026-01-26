@@ -1,13 +1,29 @@
 ActiveAdmin.register Payment do
   permit_params :user_id, :plan_id, :payment_method_id,:payment_type, :payment_amount, :status, :scheduled_at, :paid_at,:total_payment_including_fee, :transaction_fee
 
+  # Add custom scopes for filtering - succeeded will be default
+  scope :all
+  scope :succeeded, default: true
+  scope :pending
+  scope :processing
+  scope :failed
+
+  # Filters
+  filter :user
+  filter :plan
+  filter :payment_type, as: :select, collection: Payment.payment_types.keys.map { |type| [type.to_s.humanize, type] }
+  filter :status, as: :select, collection: Payment.statuses.keys.map { |status| [status.to_s.humanize, status] }
+  filter :payment_amount
+  filter :scheduled_at
+  filter :paid_at
+  filter :created_at
+
   index do
     selectable_column
     id_column
 
     column :user
     column :plan
-    column :payment_method
     column :payment_type
     column :payment_amount
     column :status do |payment|
@@ -25,7 +41,6 @@ ActiveAdmin.register Payment do
       row :id
       row :user
       row :plan
-      row :payment_method
       row :payment_type
       row :payment_amount
       row :total_payment_including_fee
@@ -43,7 +58,6 @@ ActiveAdmin.register Payment do
     f.inputs "Payment Details" do
       f.input :user
       f.input :plan
-      f.input :payment_method
       f.input :payment_type
       f.input :payment_amount
       f.input :total_payment_including_fee

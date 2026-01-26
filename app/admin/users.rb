@@ -4,6 +4,16 @@ ActiveAdmin.register User do
                 :address_street, :city, :state, :country, :annual_salary, 
                 :contact_source, :password, :password_confirmation, 
                 :firm_id, firm_ids: []
+
+  # Filters
+  filter :id
+  filter :email
+  filter :first_name
+  filter :last_name
+  filter :firms, as: :select, collection: Firm.all
+  filter :user_type, as: :select, collection: User.user_types.keys.map { |type| [type.to_s.humanize, type] }
+  filter :phone
+  filter :created_at 
   # Views
   index do
     selectable_column
@@ -51,8 +61,6 @@ ActiveAdmin.register User do
         table_for [user.payment_method] do
           column :provider
           column :card_brand
-          column :card_number
-          column :card_cvc
           column :last4
           column :exp_month
           column :exp_year

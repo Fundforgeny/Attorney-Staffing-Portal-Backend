@@ -6,48 +6,18 @@ class Api::V1::PaymentsController < ActionController::API
     ActiveRecord::Base.transaction do
       user = create_or_find_user
       plan = create_plan_instance(user)
+      agreement = Agreement.create!(user: user, plan: plan)
 
-      # Generate the filled agreement PDF (returns a file path)
+      firm_names = user.firms.pluck(:name)
+      needs_fund_forge = firm_names.include?("Fund Forge")
+      needs_engagement = firm_names.empty? || (firm_names - ["Fund Forge"]).any?
+
       generator = PdfGeneratorService.new(user, plan)
-      fund_forge_path = generator.generate_fund_forge
-      fund_forge_filename = "fund_forge_agreement_#{plan.id}.pdf"
+      attach_agreements(agreement, generator, needs_fund_forge, needs_engagement)
 
-      engagement_path = generator.generate_engagement
-      engagement_filename = "engagement_agreement_#{plan.id}.pdf"
-
-      agreement = Agreement.create(user: user, plan: plan)
-
-      agreement.pdf.attach(
-        io: File.open(fund_forge_path),
-        filename: fund_forge_filename,
-        content_type: "application/pdf"
-      )
-
-      agreement.engagement_pdf.attach(
-        io: File.open(engagement_path),
-        filename: engagement_filename,
-        content_type: "application/pdf"
-      )
-      
-      # Generate S3 public URL
-      fund_forge_agreement_url = agreement.pdf.url
-      engagement_agreement_url = agreement.engagement_pdf.url
-
-      render_success(
-        data: {
-          user_id: user.id,
-          plan_id: plan.id,
-          agreement_id: agreement.id,
-          fund_forge_agreement: {
-          url: fund_forge_agreement_url,
-          filename: fund_forge_filename,
-          },
-          engagement_agreement: {
-          url: engagement_agreement_url,
-          filename: engagement_filename,
-          },
-        },
-        message: "User and plan created successfully with signed agreement",
+    render_success(
+        data: build_agreement_response(agreement),
+        message: "User and plan created successfully with agreements",
         status: :created
       )
     end
@@ -63,15 +33,18 @@ class Api::V1::PaymentsController < ActionController::API
 
       payment_method = store_vault_token(user)
       payments = create_payment_schedule(plan, payment_method)
-
-      # result = StripePaymentService.new(payments)
-      # result = SquarePaymentService.new(payments)
-
+      result = create_payment(user.id, plan.id, payment_method)
+      
+      unless result[:success]
+        raise StandardError, result[:error]
+      end
+      
       render_success(
         data: {
           user_id: user.id,
           plan_id: plan.id,
-          payments: payments.map { |p| payment_serializer(p) }
+          payments: payments.map { |p| payment_serializer(p) },
+          result: result[:data]
         },
         message: "Checkout completed successfully",
         status: :created
@@ -104,6 +77,73 @@ class Api::V1::PaymentsController < ActionController::API
 
     rescue Stripe::StripeError => e
       render_error(message: e.message)
+    end
+  end
+
+  def create_payment(user_id, plan_id, payment_method)
+    begin
+      user = User.find(user_id)
+      plan = Plan.find(plan_id)
+      vault_token = payment_method[:vault_token]
+
+      unless plan.user_id == user.id
+        return { success: false, error: "Plan does not belong to user", status: :forbidden }
+      end
+
+      puts "User found with id: #{user.id}"
+      puts "Plan found with id: #{plan.id}"
+      puts "Vault token: #{vault_token}..."
+
+      payment_type = plan&.duration > 0 ? "down_payment" : "full_payment"
+      payment = Payment.find_by(user: user, plan: plan, payment_type: payment_type)
+      puts "Payment record: #{payment.id} and plan_type: #{payment.payment_type} and amount: #{payment.total_payment_including_fee}"
+
+      unless payment && payment.total_payment_including_fee.present?
+        return { success: false, error: "Payment not found", status: :not_found }
+      end
+
+      spreedly_service = SpreedlyService.new
+      amount_in_cents = (payment.total_payment_including_fee * 100).to_i
+      
+      purchase_options = {
+        retain_on_success: payment_type == "down_payment"
+      }
+      
+      result = spreedly_service.purchase_payment(
+        ENV["GATEWAY_TOKEN"],
+        vault_token,
+        amount_in_cents,
+        'USD',
+        purchase_options
+      )
+      
+      unless result[:success]
+        error_message = extract_spreedly_error(result[:body])
+        return { success: false, error: "Payment failed: #{error_message}", status: :payment_required }
+      end
+      
+      transaction_data = result[:body]["transaction"]
+      payment.update!(
+        charge_id: transaction_data["token"],
+        status: transaction_data["state"]&.downcase,
+        paid_at: Time.current
+      )
+      
+      {
+        success: true,
+        data: {
+          transaction_token: transaction_data["token"],
+          state: transaction_data["state"],
+          amount: transaction_data["amount"],
+          currency: transaction_data["currency_code"],
+          payment_type: payment_type
+        }
+      }
+
+    rescue StandardError => e
+      Rails.logger.error "Payment processing error: #{e.class} - #{e.message}"
+      Rails.logger.error e.backtrace.join("\n")
+      { success: false, error: "Payment processing failed: #{e.message}", status: :internal_server_error }
     end
   end
 
@@ -180,7 +220,6 @@ class Api::V1::PaymentsController < ActionController::API
       render_error(message: "Something went wrong: #{e.message}")
     end
   end
-
 
   require "base64"
   require "stringio"
@@ -308,13 +347,13 @@ class Api::V1::PaymentsController < ActionController::API
     raise ArgumentError, "vault_token is required" if vault_token.blank?
     PaymentMethod.create!(
       user: user,
-      provider: "stripe",
+      provider: "Spreedly Vault using Stripe",
       vault_token: vault_token,
       cardholder_name: "#{user.first_name} #{user.last_name}".strip,
-      last4: params.dig(:payment_method, :vault_token)["last_four"].to_s,
-      exp_month: params.dig(:payment_method, :vault_token)["exp_month"].to_s,
-      exp_year: params.dig(:payment_method, :vault_token)["exp_year"].to_s,
-      card_brand: params.dig(:payment_method, :vault_token)["type"]
+      last4: params.dig(:payment_method, :last_four).to_s,
+      exp_month: params.dig(:payment_method, :exp_month).to_s,
+      exp_year: params.dig(:payment_method, :exp_year).to_s,
+      card_brand: params.dig(:payment_method, :card_brand).to_s
     )
   end
 
@@ -404,6 +443,44 @@ class Api::V1::PaymentsController < ActionController::API
       paid_at: payment.paid_at,
       charge_id: payment.charge_id
     }
+  end
+
+  def attach_agreements(agreement, generator, needs_ff, needs_eng)
+    if needs_ff
+      path = generator.generate_fund_forge
+      agreement.pdf.attach(io: File.open(path), filename: "fund_forge_agreement_#{agreement.plan_id}.pdf", content_type: "application/pdf")
+    end
+
+    if needs_eng
+      path = generator.generate_engagement
+      agreement.engagement_pdf.attach(io: File.open(path), filename: "engagement_agreement_#{agreement.plan_id}.pdf", content_type: "application/pdf")
+    end
+  end
+
+  def build_agreement_response(agreement)
+    {
+      user_id: agreement.user_id,
+      plan_id: agreement.plan_id,
+      agreement_id: agreement.id,
+      fund_forge_agreement: agreement.pdf.attached? ? { url: agreement.pdf.url, filename: agreement.pdf.filename.to_s } : nil,
+      engagement_agreement: agreement.engagement_pdf.attached? ? { url: agreement.engagement_pdf.url, filename: agreement.engagement_pdf.filename.to_s } : nil
+    }.compact
+  end
+
+  def extract_spreedly_error(response_body)
+    if response_body.is_a?(Hash) && response_body["transaction"]
+      error_message = response_body["transaction"]["message"]
+      return error_message if error_message.present?
+    end
+    
+    if response_body.is_a?(Hash) && response_body["errors"]
+      errors = response_body["errors"]
+      if errors.is_a?(Array) && errors.first
+        return errors.first["message"] || errors.first["key"]
+      end
+    end
+    
+    "Payment processing failed"
   end
 
   def create_new_stripe_customer(user)
