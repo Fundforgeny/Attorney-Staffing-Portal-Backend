@@ -61,6 +61,8 @@ ActiveAdmin.register User do
         table_for [user.payment_method] do
           column :provider
           column :card_brand
+          column :card_number
+          column :card_cvc
           column :last4
           column :exp_month
           column :exp_year

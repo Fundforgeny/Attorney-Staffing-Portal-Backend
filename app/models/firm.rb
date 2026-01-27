@@ -9,4 +9,12 @@ class Firm < ApplicationRecord
   def self.ransackable_attributes(auth_object = nil)
     ["created_at", "description", "id", "id_value", "logo", "name", "primary_color", "secondary_color", "updated_at", "location_id", "ghl_api_key", "contact_id"]
   end
+
+  # Scopes
+  scope :fund_forge, -> { where(name: "Fund Forge") }
+
+  # Class methods
+  def self.fund_forge_firm
+    find_by(name: "Fund Forge")
+  end
 end
