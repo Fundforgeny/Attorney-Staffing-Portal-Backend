@@ -30,20 +30,24 @@ class PaymentService
 
   def create_payment_schedule(payment_method)
     payments = []
-    payments << create_down_payment(payment_method) if @plan.down_payment > 0
+    payments << create_down_payment(payment_method)
     payments.concat(create_monthly_installments(payment_method)) if @plan.duration > 0
     payments
   end
 
   def create_down_payment(payment_method)
+    down_payment = @plan.duration > 0 ? @plan.down_payment : @plan.total_payment
+    down_payment_including_fee = down_payment * 1.03
+    transaction_fee = down_payment * 0.03
+
     Payment.create!(
       plan: @plan,
       user: @user,
       payment_method: payment_method,
       payment_type: @plan.duration > 0 ? :down_payment : :full_payment,
-      payment_amount: @plan.down_payment,
-      total_payment_including_fee: (@plan.down_payment * 1.03).round(2),
-      transaction_fee: (@plan.down_payment * 0.03).round(2),
+      payment_amount: down_payment,
+      total_payment_including_fee: down_payment_including_fee,
+      transaction_fee: transaction_fee,
       status: :pending,
       scheduled_at: Time.current
     )
@@ -52,6 +56,8 @@ class PaymentService
   def create_monthly_installments(payment_method)
     payments = []
     start_date = parse_installment_date
+    monthly_amount = @plan.monthly_interest_amount + @plan.monthly_payment
+    transaction_fee = monthly_amount * 0.03
 
     @plan.duration.times do |i|
       payments << Payment.create!(
@@ -59,9 +65,9 @@ class PaymentService
         user: @user,
         payment_method: payment_method,
         payment_type: :monthly_payment,
-        payment_amount: @plan.monthly_payment,
-        total_payment_including_fee: (@plan.monthly_payment * 1.03).round(2),
-        transaction_fee: (@plan.monthly_payment * 0.03).round(2),
+        payment_amount: monthly_amount,
+        total_payment_including_fee: monthly_amount + transaction_fee,
+        transaction_fee: transaction_fee.round(2),
         status: :pending,
         scheduled_at: start_date + i.months
       )
