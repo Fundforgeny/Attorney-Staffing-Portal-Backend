@@ -35,40 +35,29 @@ class Api::V1::MagicLinksController < ActionController::API
       end
       
       # Skip confirmation for API-created users
+      user.skip_confirmation!
+      user.save!
+      
       retainer_amount = params[:retainer_amount].to_s.gsub(/[$,]/, '').to_f
       down_payment    = params[:down_payment].to_s.gsub(/[$,]/, '').to_f
 
-      user.skip_confirmation!
-      user.save!
+      plan = Plan.find_or_initialize_by(user_id: user.id, name: "temp_plan")
 
-      # Create or update firm_user association with GHL ID
-      firm_user = FirmUser.find_or_initialize_by(user: user, firm: firm)
-      firm_user.assign_attributes(
-        ghl_fund_forge_id: params[:id]
+      plan.assign_attributes(
+        total_payment: retainer_amount,
+        down_payment: down_payment,
+        monthly_payment: 0,
+        status: :active,
       )
-      firm_user.save!
 
-      plan = Plan.where(user_id: user.id, name: "temp_plan").where.not(magic_link_token: [nil, ""])
-
-      if plan.exists?
-        plan = plan.last
-        magic_link_token = plan.magic_link_token
-      else
-        magic_link_token = generate_magic_link_token(user)
-
-        plan = Plan.create!(
-          user: user,
-          name: "temp_plan",
-          total_payment: retainer_amount,
-          down_payment: down_payment,
-          monthly_payment: 0,
-          status: :active,
-          magic_link_token: magic_link_token
-        )
+      if plan.magic_link_token.blank?
+        plan.magic_link_token = generate_magic_link_token(user)
       end
 
+      plan.save!
+
       frontend_url = "https://payments.fundforge.net/pay"
-      magic_link = "#{frontend_url}?token=#{magic_link_token}"
+      magic_link = "#{frontend_url}?token=#{plan.magic_link_token}"
 
       render_success(
         data: {
