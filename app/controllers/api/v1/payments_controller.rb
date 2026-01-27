@@ -48,7 +48,6 @@ class Api::V1::PaymentsController < ActionController::API
     @user = User.find(@payment_params[:user_id])
     @plan = Plan.find(@payment_params[:plan_id])
     render_error("Plan does not belong to user") unless @plan.user_id == @user.id
-    binding.pry
     result = SpreedlyService.new(@user, @plan, @payment_params).process_payment
     
     if result[:success]
