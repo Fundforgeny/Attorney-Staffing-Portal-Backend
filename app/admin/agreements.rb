@@ -1,6 +1,11 @@
 ActiveAdmin.register Agreement do
   permit_params :user_id, :plan_id, :signed_at
 
+  filter :user
+  filter :plan
+  filter :created_at
+  filter :signed_at
+
   index do
     selectable_column
     id_column

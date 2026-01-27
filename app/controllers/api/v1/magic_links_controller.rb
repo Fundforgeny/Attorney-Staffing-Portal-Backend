@@ -3,7 +3,7 @@ class Api::V1::MagicLinksController < ActionController::API
 
   def create_user_with_magic_link
     # Validate required parameters
-    required_params = [:name, :email, :id, :retainer_amount, :down_payment]
+    required_params = [:name, :email, :id, :retainer_amount, :down_payment, :location_id]
     missing_params = required_params.select { |param| params[param].blank? }
     
     unless missing_params.empty?
@@ -20,11 +20,19 @@ class Api::V1::MagicLinksController < ActionController::API
       user = User.find_or_initialize_by(email: params[:email])
 
       user.assign_attributes(
-        ghl_contact_id: params[:id],
         first_name: first_name,
         last_name: last_name || "",
         phone: params[:phone]
       )
+      
+      # Find firm by location_id
+      firm = Firm.find_by(location_id: params[:location_id])
+      unless firm
+        return render_error(
+          message: "Firm not found for location_id: #{params[:location_id]}", 
+          status: :not_found
+        )
+      end
       
       # Skip confirmation for API-created users
       retainer_amount = params[:retainer_amount].to_s.gsub(/[$,]/, '').to_f
@@ -32,6 +40,13 @@ class Api::V1::MagicLinksController < ActionController::API
 
       user.skip_confirmation!
       user.save!
+
+      # Create or update firm_user association with GHL ID
+      firm_user = FirmUser.find_or_initialize_by(user: user, firm: firm)
+      firm_user.assign_attributes(
+        ghl_fund_forge_id: params[:id]
+      )
+      firm_user.save!
 
       plan = Plan.where(user_id: user.id, name: "temp_plan").where.not(magic_link_token: [nil, ""])
 
@@ -60,7 +75,9 @@ class Api::V1::MagicLinksController < ActionController::API
           user_id: user.id,
           email: user.email,
           plan_id: plan.id,
-          magic_link: magic_link
+          magic_link: magic_link,
+          firm_id: firm.id,
+          firm_name: firm.name
         },
         message: "User and plan created successfully with magic link",
         status: :created

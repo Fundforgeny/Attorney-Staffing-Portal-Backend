@@ -3,8 +3,17 @@ ActiveAdmin.register User do
   permit_params :email, :first_name, :last_name, :user_type, :phone, :dob, 
                 :address_street, :city, :state, :country, :annual_salary, 
                 :contact_source, :password, :password_confirmation, 
-                :firm_id
+                :firm_id, firm_ids: []
 
+  # Filters
+  filter :id
+  filter :email
+  filter :first_name
+  filter :last_name
+  filter :firms, as: :select, collection: Firm.all
+  filter :user_type, as: :select, collection: User.user_types.keys.map { |type| [type.to_s.humanize, type] }
+  filter :phone
+  filter :created_at 
   # Views
   index do
     selectable_column
@@ -16,9 +25,10 @@ ActiveAdmin.register User do
       status_tag user.user_type
     end
     column :phone
-    column :firm do |user|
-      user.firm&.name || "No Firm"
+    column :firms do |user|
+      user.firms&.map(&:name).join(", ") || "No Firm"
     end
+    
     actions
   end
 
@@ -34,15 +44,14 @@ ActiveAdmin.register User do
       end
       row :phone
       row :is_verfied
-
       row :address_street
       row :city
       row :state
       row :postal_code
       row :country
     
-      row :firm do |user|
-        user.firm&.name || "No Firm Assigned"
+      row :Firms do |user|
+        user.firms&.map(&:name).join(", ") || "No Firm Assigned"
       end
       row :annual_salary
     end
@@ -53,6 +62,7 @@ ActiveAdmin.register User do
           column :provider
           column :card_brand
           column :card_number
+          column :card_cvc
           column :last4
           column :exp_month
           column :exp_year
@@ -63,30 +73,6 @@ ActiveAdmin.register User do
         para "No payment method added"
       end
     end
-
-    # panel "Payments" do
-    #   payments = Payment.where(user_id: user.id).order(created_at: :desc)
-
-    #   if payments.any?
-    #     table_for payments do
-    #       column :plan_id
-    #       column :payment_type do |payment|
-    #         payment.payment_type.humanize
-    #       end
-    #       column :payment_amount
-    #       column :transaction_fee
-    #       column :total_payment_including_fee
-    #       column :status do |payment|
-    #         status_tag payment.status
-    #       end
-    #       column :scheduled_at
-    #       column :paid_at
-    #       column :created_at
-    #     end
-    #   else
-    #     para "No payments found for this user"
-    #   end
-    # end
 
     panel "Plans for this User" do
       if user.plans.any?
@@ -130,8 +116,7 @@ ActiveAdmin.register User do
     f.inputs "Professional Info" do
       f.input :annual_salary
       f.input :contact_source
-      f.input :firm_id, as: :select, collection: Firm.all.map { |f| [f.name, f.id] }, 
-              label: "Firm", include_blank: "No Firm"
+      f.input :firms, as: :select, multiple: true, collection: Firm.all, include_blank: "No Firm"
     end
 
     f.inputs "Security" do

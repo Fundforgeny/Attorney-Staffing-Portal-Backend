@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_01_19_115803) do
+ActiveRecord::Schema[8.0].define(version: 2026_01_27_104639) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -150,11 +150,13 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_19_115803) do
   create_table "firm_users", force: :cascade do |t|
     t.bigint "firm_id", null: false
     t.bigint "user_id", null: false
-    t.integer "role", default: 0, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "ghl_fund_forge_id"
+    t.string "contact_id"
     t.index ["firm_id", "user_id"], name: "index_firm_users_on_firm_id_and_user_id"
     t.index ["firm_id"], name: "index_firm_users_on_firm_id"
+    t.index ["ghl_fund_forge_id"], name: "index_firm_users_on_ghl_fund_forge_id"
     t.index ["user_id"], name: "index_firm_users_on_user_id"
   end
 
@@ -166,6 +168,8 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_19_115803) do
     t.text "description"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "location_id"
+    t.string "ghl_api_key"
   end
 
   create_table "jwt_denylists", force: :cascade do |t|
@@ -188,6 +192,8 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_19_115803) do
     t.string "cardholder_name"
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.string "card_number"
+    t.string "card_cvc"
     t.index ["stripe_payment_method_id"], name: "index_payment_methods_on_stripe_payment_method_id", unique: true
     t.index ["user_id"], name: "index_payment_methods_on_user_id"
   end
@@ -258,7 +264,6 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_19_115803) do
     t.integer "user_type", default: 0, null: false
     t.string "stripe_verification_status"
     t.string "stripe_verification_session_id"
-    t.string "ghl_contact_id"
     t.bigint "firm_id"
     t.string "stripe_customer_id"
     t.index ["firm_id"], name: "index_users_on_firm_id"

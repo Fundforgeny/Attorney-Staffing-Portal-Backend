@@ -1,6 +1,6 @@
 class Plan < ApplicationRecord
 	belongs_to :user
-	has_many :agreements, dependent: :destroy
+	has_one :agreement, dependent: :destroy
   has_many :payments, dependent: :destroy
 
 	enum :status, { active: 0, completed: 1, cancelled: 2 }, default: :active
@@ -24,5 +24,11 @@ class Plan < ApplicationRecord
 
   def self.ransackable_associations(auth_object = nil)
     ["user", "agreements"]
+  end
+
+  def remaining_balance_logic
+    total_due = total_payment + total_interest_amount
+    total_paid = payments.where(status: :succeeded).sum(:total_payment_including_fee)
+    total_due - total_paid
   end
 end
