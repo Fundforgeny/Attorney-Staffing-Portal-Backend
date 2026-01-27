@@ -34,26 +34,34 @@ class UserPlanCreationService
   end
 
   def create_plan_instance(user)
-    plan = if @plan_params[:plan_id].present?
-             Plan.find_by(id: @plan_params[:plan_id])
-           else
-             Plan.find_or_initialize_by(user: user, name: @plan_params[:name])
-           end
-
-    raise ActiveRecord::RecordNotFound, "Plan not found" if @plan_params[:plan_id].present? && plan.nil?
-
-    plan.assign_attributes(
-      name: @plan_params[:name],
-      duration: @plan_params[:duration],
-      total_payment: @plan_params[:total_payment],
-      total_interest_amount: @plan_params[:total_interest],
-      monthly_payment: @plan_params[:monthly_payment],
-      monthly_interest_amount: @plan_params[:monthly_interest],
-      down_payment: @plan_params[:down_payment],
-      status: :active
-    )
-
-    plan.save!
+    if @plan_params[:plan_id].present?
+      plan = Plan.find_by(id: @plan_params[:plan_id])
+      raise ActiveRecord::RecordNotFound, "Plan not found" if plan.nil?
+      
+      plan.update!(
+        name: @plan_params[:name],
+        duration: @plan_params[:duration],
+        total_payment: @plan_params[:total_payment],
+        total_interest_amount: @plan_params[:total_interest],
+        monthly_payment: @plan_params[:monthly_payment],
+        monthly_interest_amount: @plan_params[:monthly_interest],
+        down_payment: @plan_params[:down_payment],
+        status: :active
+      )
+    else
+      plan = Plan.create!(
+        user: user,
+        name: @plan_params[:name],
+        duration: @plan_params[:duration],
+        total_payment: @plan_params[:total_payment],
+        total_interest_amount: @plan_params[:total_interest],
+        monthly_payment: @plan_params[:monthly_payment],
+        monthly_interest_amount: @plan_params[:monthly_interest],
+        down_payment: @plan_params[:down_payment],
+        status: :active
+      )
+    end
+    
     plan
   end
 end
