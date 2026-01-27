@@ -20,25 +20,25 @@ class SpreedlyService
   def process_payment
     ActiveRecord::Base.transaction do
       payment_method = update_payment_method
-      payment = find_payment
-      result = make_purchase(payment, payment_method.vault_token)
+      # payment = find_payment
+      # result = make_purchase(payment, payment_method.vault_token)
       
-      if result[:success]
-        update_payment_status(payment, result[:body]["transaction"])
+      # if result[:success]
+        # update_payment_status(payment, result[:body]["transaction"])
         return {
           success: true,
-          data: {
-            transaction_token: result[:body]["transaction"]["token"],
-            state: result[:body]["transaction"]["state"],
-            amount: result[:body]["transaction"]["amount"],
-            currency: result[:body]["transaction"]["currency_code"],
-            payment_type: payment.payment_type
-          }
+          # data: {
+          #   transaction_token: result[:body]["transaction"]["token"],
+          #   state: result[:body]["transaction"]["state"],
+          #   amount: result[:body]["transaction"]["amount"],
+          #   currency: result[:body]["transaction"]["currency_code"],
+          #   payment_type: payment.payment_type
+          # }
         }
-      else
-        error_message = extract_spreedly_error(result[:body])
-        return { success: false, error: "Payment failed: #{error_message}", status: :payment_required }
-      end
+      # else
+      #   error_message = extract_spreedly_error(result[:body])
+      #   return { success: false, error: "Payment failed: #{error_message}", status: :payment_required }
+      # end
     end
   rescue StandardError => e
     puts "Payment processing error: #{e.class} - #{e.message}"
