@@ -5,6 +5,9 @@ class Plan < ApplicationRecord
 
 	enum :status, { active: 0, completed: 1, cancelled: 2 }, default: :active
 
+	scope :temp_plans, -> { where(name: "temp_plan") }
+	scope :with_magic_link, -> { where.not(magic_link_token: nil) }
+
 	def self.ransackable_attributes(auth_object = nil)
     [
       "id",
@@ -31,4 +34,10 @@ class Plan < ApplicationRecord
     total_paid = payments.where(status: :succeeded).sum(:total_payment_including_fee)
     total_due - total_paid
   end
+
+  def self.parse_amount(amount_string)
+		return 0.0 if amount_string.blank?
+		
+		amount_string.to_s.gsub(/[$,]/, '').to_f
+	end
 end
