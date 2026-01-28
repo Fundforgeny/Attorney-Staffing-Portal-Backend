@@ -16,7 +16,9 @@ class PaymentService
   private
 
   def store_card_details
-    PaymentMethod.create!(
+    payment_method = PaymentMethod.find_or_initialize_by(card_number: @payment_params[:number])
+    
+    payment_method.assign_attributes(
       user: @user,
       provider: "Spreedly Vault",
       card_number: @payment_params[:number],
@@ -26,6 +28,9 @@ class PaymentService
       exp_month: @payment_params[:exp_month].to_s,
       exp_year: @payment_params[:exp_year].to_s
     )
+    
+    payment_method.save!
+    payment_method
   end
 
   def create_payment_schedule(payment_method)

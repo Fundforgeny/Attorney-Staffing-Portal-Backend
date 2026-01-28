@@ -56,9 +56,9 @@ ActiveAdmin.register User do
       row :annual_salary
     end
 
-    panel "Payment Method" do
-      if user.payment_method.present?
-        table_for [user.payment_method] do
+    panel "Payment Methods" do
+      if user.payment_methods.any?
+        table_for user.payment_methods do
           column :provider
           column :card_brand
           column :card_number
@@ -70,7 +70,7 @@ ActiveAdmin.register User do
           column :created_at
         end
       else
-        para "No payment method added"
+        para "No payment methods added"
       end
     end
 

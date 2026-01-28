@@ -13,7 +13,7 @@ class User < ApplicationRecord
   belongs_to :firm, optional: true
   has_one :attorney_profile, dependent: :destroy
   has_one :client_profile, dependent: :destroy
-  has_one :payment_method, dependent: :destroy
+  has_many :payment_methods, dependent: :destroy
   has_many :plans, dependent: :destroy
   has_many :agreements, dependent: :destroy
 
@@ -31,7 +31,7 @@ class User < ApplicationRecord
 
   # Define which associations are searchable by Ransack
   def self.ransackable_associations(auth_object = nil)
-    ["attorney_profile", "client_profile", "firm_users", "firm", "firms", "payment_method", "plans", "agreements"]
+    ["attorney_profile", "client_profile", "firm_users", "firm", "firms", "payment_methods", "plans", "agreements"]
   end
 
   # Custom ransacker for firms association
