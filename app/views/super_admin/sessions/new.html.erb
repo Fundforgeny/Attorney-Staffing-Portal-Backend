@@ -1,0 +1,21 @@
+<h1>Super Admin Login</h1>
+
+<% if flash[:alert].present? %>
+  <p><%= flash[:alert] %></p>
+<% end %>
+
+<%= form_with url: super_admin_sign_in_path, scope: :user, local: true do |f| %>
+  <div>
+    <%= f.label :email %><br>
+    <%= f.email_field :email, required: true, autofocus: true %>
+  </div>
+
+  <div>
+    <%= f.label :password %><br>
+    <%= f.password_field :password, required: true %>
+  </div>
+
+  <div>
+    <%= f.submit "Sign in" %>
+  </div>
+<% end %>
