@@ -21,7 +21,6 @@ class SpreedlyService
     ActiveRecord::Base.transaction do
       payment_method = update_payment_method
       payment = find_payment
-      binding.pry
       result = make_purchase(payment, payment_method.vault_token)
       
       if result[:success]
