@@ -8,21 +8,34 @@ class Api::V1::PaymentsController < ActionController::API
   before_action :set_signature_params, only: [:save_signature]
 
   def create_user_plan
+    agreement = nil
+
     ActiveRecord::Base.transaction do
       result = UserPlanCreationService.new(@user_params, @plan_params).create_user_and_plan
       user = result[:user]
       plan = result[:plan]
 
       agreement = Agreement.create!(user: user, plan: plan)
-      AgreementAttachmentService.new(agreement).attach_agreements
-
-      render_success(
-        data: build_agreement_response(agreement),
-        message: "User and plan created successfully with agreements",
-        status: :created
-      )
     end
+
+    # Attach PDFs outside the transaction; never raise on failure
+    begin
+      AgreementAttachmentService.new(agreement).attach_agreements if agreement
+    rescue StandardError => e
+      Rails.logger.error("PDF attachment failed for Agreement ##{agreement&.id}: #{e.message}")
+      Rails.logger.error(e.backtrace.join("\n")) if Rails.env.development?
+    end
+
+    agreement&.reload
+
+    render_success(
+      data: build_agreement_response(agreement),
+      message: "User and plan created successfully with agreements",
+      status: :created
+    )
   rescue StandardError => e
+    Rails.logger.error("Error in create_user_plan: #{e.class}: #{e.message}")
+    Rails.logger.error(e.backtrace.join("\n")) if Rails.env.development?
     render_error(message: e.message, status: :unprocessable_entity)
   end
 
@@ -48,7 +61,6 @@ class Api::V1::PaymentsController < ActionController::API
     @user = User.find(@payment_params[:user_id])
     @plan = Plan.find(@payment_params[:plan_id])
     render_error("Plan does not belong to user") unless @plan.user_id == @user.id
-    binding.pry
     result = SpreedlyService.new(@user, @plan, @payment_params).process_payment
     
     if result[:success]

@@ -5,6 +5,11 @@ class AgreementAttachmentService
     @user = agreement.user
     @plan = agreement.plan
     @pdf_generator = PdfGeneratorService.new(@user, @plan)
+  rescue StandardError => e
+    # If pdftk is missing, skip PDF generation without failing the request
+    Rails.logger.error("PDF generator unavailable for Agreement ##{@agreement.id}: #{e.message}")
+    Rails.logger.error(e.backtrace.join("\n")) if Rails.env.development?
+    @pdf_generator = nil
   end
 
   def attach_agreements
@@ -23,6 +28,8 @@ class AgreementAttachmentService
   end
 
   def attach_fund_forge_agreement
+    return unless @pdf_generator
+
     path = @pdf_generator.generate_fund_forge
     @agreement.pdf.attach(
       io: File.open(path),
@@ -33,6 +40,8 @@ class AgreementAttachmentService
   end
 
   def attach_engagement_agreement
+    return unless @pdf_generator
+
     path = @pdf_generator.generate_engagement
     @agreement.engagement_pdf.attach(
       io: File.open(path),

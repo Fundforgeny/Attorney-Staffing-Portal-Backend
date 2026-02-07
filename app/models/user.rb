@@ -18,7 +18,7 @@ class User < ApplicationRecord
   has_many :agreements, dependent: :destroy
 
   # Callbacks
-  before_create :sync_with_ghl_accounts
+  after_commit :sync_with_ghl_accounts, on: :create
   before_save :normalize_email
 
   # Validations
@@ -81,6 +81,7 @@ class User < ApplicationRecord
   end
 
   def sync_with_ghl_accounts
+    return unless id
     SearchGhlContactsWorker.perform_async(id)
   end
 
