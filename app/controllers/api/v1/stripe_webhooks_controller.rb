@@ -56,6 +56,7 @@ class Api::V1::StripeWebhooksController < ActionController::API
         when 'payment_intent.succeeded'
           process_success(payment, payment_intent)
           SyncDataToGhl.perform_async(payment.user.id, payment.id)
+          GhlInboundWebhookWorker.perform_async(payment.id)
         when 'payment_intent.payment_failed'
           payment.update!(status: :failed)
           SyncDataToGhl.perform_async(payment.user.id, payment.id)
