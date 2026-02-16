@@ -22,7 +22,7 @@ class User < ApplicationRecord
   before_save :normalize_email
 
   # Validations
-  validates :email, presence: true, uniqueness: true
+  validates :email, presence: true
 
   # Define which attributes are searchable by Ransack
   def self.ransackable_attributes(auth_object = nil)
