@@ -9,6 +9,34 @@ ActiveAdmin.register Plan do
   filter :status, as: :select, collection: Plan.statuses.keys.map { |status| [status.to_s.humanize, status] }
   filter :created_at
 
+  action_item :sync_with_ghl, only: :show do
+    link_to(
+      "Sync with GHL",
+      sync_with_ghl_admin_plan_path(resource, inline: "1"),
+      method: :post,
+      data: { confirm: "Sync this plan with GHL now?" }
+    )
+  end
+
+  member_action :sync_with_ghl, method: :post do
+    plan = Plan.find(params[:id])
+
+    response = GhlPlanSyncWorker.new.perform(plan.id)
+
+    if response == :missing_webhook_url
+      redirect_to resource_path(plan), alert: "GHL sync failed: webhook URL is not configured."
+    elsif response.code.to_i == 200
+      redirect_to resource_path(plan), notice: "Successfully synced with GHL."
+    else
+      error_message = begin
+                        JSON.parse(response.body)["message"]
+                      rescue
+                        response.body.to_s
+                      end
+      redirect_to resource_path(plan), alert: "GHL sync failed: #{error_message}"
+    end
+  end
+
   index do
     selectable_column
     id_column
