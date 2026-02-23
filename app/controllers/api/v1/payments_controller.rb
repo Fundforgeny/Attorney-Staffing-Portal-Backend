@@ -202,17 +202,49 @@ class Api::V1::PaymentsController < ActionController::API
 
   def set_user_params
     @user_params = params.require(:user).permit(:name, :email)
-    @plan_params = params.require(:plan).permit(:name, :duration, :total_payment, :total_interest, :monthly_payment, :monthly_interest, :down_payment, :plan_id)
+    @plan_params = params.require(:plan).permit(
+      :name,
+      :duration,
+      :total_payment,
+      :total_interest,
+      :monthly_payment,
+      :monthly_interest,
+      :down_payment,
+      :plan_id,
+      :selected_payment_plan
+    )
   end
 
   def build_agreement_response(agreement)
+    plan = agreement.plan
+    payment_plan_selected = plan.payment_plan_selected?
+
     {
       user_id: agreement.user_id,
       plan_id: agreement.plan_id,
       agreement_id: agreement.id,
+      order_summary: build_order_summary(plan, payment_plan_selected),
       fund_forge_agreement: agreement.pdf.attached? ? { url: agreement.pdf.url, filename: agreement.pdf.filename.to_s } : nil,
       engagement_agreement: agreement.engagement_pdf.attached? ? { url: agreement.engagement_pdf.url, filename: agreement.engagement_pdf.filename.to_s } : nil
     }.compact
+  end
+
+  def build_order_summary(plan, payment_plan_selected)
+    if payment_plan_selected
+      {
+        base_legal_fee: plan.base_legal_fee_amount,
+        administration_fee_name: plan.administration_fee_name,
+        administration_fee_percentage: plan.administration_fee_percentage,
+        administration_fee_amount: plan.administration_fee_amount,
+        total_payment_plan_amount: plan.total_payment_plan_amount,
+        disclosure: "Clients who elect to enroll in a Fund Forge managed payment plan agree to a 4% Payment Plan Administration Fee. This fee applies to all installment plans regardless of payment method. Clients who pay in full via cash, check, or wire at the time of engagement do not incur this fee."
+      }
+    else
+      {
+        base_legal_fee: plan.base_legal_fee_amount,
+        total_due: plan.base_legal_fee_amount
+      }
+    end
   end
 
   # Not being used now

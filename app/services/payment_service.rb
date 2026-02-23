@@ -36,14 +36,16 @@ class PaymentService
   end
 
   def create_down_payment(payment_method)
+    amounts = fee_breakdown_for(@plan.down_payment)
+
     Payment.create!(
       plan: @plan,
       user: @user,
       payment_method: payment_method,
       payment_type: @plan.duration > 0 ? :down_payment : :full_payment,
       payment_amount: @plan.down_payment,
-      total_payment_including_fee: (@plan.down_payment * 1.03).round(2),
-      transaction_fee: (@plan.down_payment * 0.03).round(2),
+      total_payment_including_fee: amounts[:total],
+      transaction_fee: amounts[:fee],
       status: :pending,
       scheduled_at: Time.current
     )
@@ -54,14 +56,16 @@ class PaymentService
     start_date = parse_installment_date
 
     @plan.duration.times do |i|
+      amounts = fee_breakdown_for(@plan.monthly_payment)
+
       payments << Payment.create!(
         plan: @plan,
         user: @user,
         payment_method: payment_method,
         payment_type: :monthly_payment,
         payment_amount: @plan.monthly_payment,
-        total_payment_including_fee: (@plan.monthly_payment * 1.03).round(2),
-        transaction_fee: (@plan.monthly_payment * 0.03).round(2),
+        total_payment_including_fee: amounts[:total],
+        transaction_fee: amounts[:fee],
         status: :pending,
         scheduled_at: start_date + i.months
       )
@@ -76,5 +80,18 @@ class PaymentService
     Time.zone.strptime(@first_installment_date, "%m-%d-%Y")
   rescue ArgumentError
     Time.current
+  end
+
+  def fee_breakdown_for(amount)
+    selected_payment_plan = PaymentPlanFeeCalculator.plan_selected?(
+      selected_payment_plan: nil,
+      duration: @plan.duration
+    )
+    calculator = PaymentPlanFeeCalculator.new(base_amount: amount, selected_payment_plan: selected_payment_plan)
+
+    {
+      fee: calculator.fee_amount,
+      total: calculator.total_amount
+    }
   end
 end

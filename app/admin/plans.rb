@@ -67,10 +67,11 @@ ActiveAdmin.register Plan do
               row :id
               row :name
               row :duration
-              row :total_payment
-              row :total_interest_amount
+              row("Base Legal Fee") { |record| number_to_currency(record.base_legal_fee_amount) }
+              row("Fund Forge Payment Plan Administration Fee (4%)") { |record| number_to_currency(record.administration_fee_amount) }
+              row("Total Payment Plan Amount") { |record| number_to_currency(record.total_payment_plan_amount) }
               row :monthly_payment
-              row :monthly_interest_amount
+              row("Monthly Administration Fee Portion") { |record| number_to_currency(record.monthly_interest_amount || 0) }
               row :down_payment
               row :status do |record|
                 status_tag record.status
@@ -134,8 +135,8 @@ ActiveAdmin.register Plan do
                 column :id
                 column :payment_type
                 column :payment_amount
-                column :transaction_fee
-                column :total_payment_including_fee
+                column("Administration Fee") { |payment| number_to_currency(payment.transaction_fee || 0) }
+                column("Total Charged") { |payment| number_to_currency(payment.total_payment_including_fee || 0) }
                 column :status do |payment|
                   status_tag payment.status
                 end

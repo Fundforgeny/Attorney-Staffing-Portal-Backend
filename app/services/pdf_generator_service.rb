@@ -20,19 +20,19 @@ class PdfGeneratorService
       'customer_address'          => @user.address_street || 'N/A',
       'monthly_payment'           => formatted(@plan.monthly_payment),
       'down_payment'              => formatted(@plan.down_payment),
-      'annual_percentage_rate'    => "19%",
-      'interest_rate'             => "#{apr_rate}%",
+      'annual_percentage_rate'    => "#{administration_fee_percentage}%",
+      'interest_rate'             => "#{administration_fee_percentage}%",
       'amount_financed'           => formatted(amount_financed),
-      'total_interest'            => formatted(@plan.total_interest_amount),
-      'total_payment_plan_amount' => formatted(@plan.total_payment),
+      'total_interest'            => formatted(@plan.administration_fee_amount),
+      'total_payment_plan_amount' => formatted(@plan.total_payment_plan_amount),
       'no_of_payments'            => @plan.duration.to_s,
       'duration'                  => @plan.duration ? "Monthly" : "One Time Payment",
       'loan_term_months'          => @plan.duration.to_s,
       'current_date'              => Date.current.strftime("%m/%d/%Y"),
-      'apr'                       => "19%",
+      'apr'                       => "#{administration_fee_percentage}%",
       'monthly_payments'          => "#{formatted(@plan.monthly_payment)} x #{@plan.duration}",
-      'financed_charge'           => formatted(@plan.total_interest_amount),
-      'total_of_payments'         => formatted(@plan.total_payment),
+      'financed_charge'           => formatted(@plan.administration_fee_amount),
+      'total_of_payments'         => formatted(@plan.total_payment_plan_amount),
     }
 
     @pdftk.fill_form(FUND_FORGE_TEMPLATE.to_s, output_path, fields, flatten: true)
@@ -69,9 +69,8 @@ class PdfGeneratorService
     (@plan.total_payment - (@plan.down_payment || 0)).to_f
   end
 
-  def apr_rate
-    return "0.00" if amount_financed.zero?
-    ((@plan.total_interest_amount / amount_financed) * 100).round(2)
+  def administration_fee_percentage
+    @plan.payment_plan_selected? ? @plan.administration_fee_percentage : 0
   end
 
   def formatted(amount)

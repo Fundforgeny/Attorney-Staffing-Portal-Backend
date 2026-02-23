@@ -42,13 +42,25 @@ class UserPlanCreationService
 
     raise ActiveRecord::RecordNotFound, "Plan not found" if @plan_params[:plan_id].present? && plan.nil?
 
+    duration = @plan_params[:duration].to_i
+    selected_payment_plan = PaymentPlanFeeCalculator.plan_selected?(
+      selected_payment_plan: @plan_params[:selected_payment_plan],
+      duration: duration
+    )
+    base_legal_fee = @plan_params[:total_payment].to_d
+    fee_calculator = PaymentPlanFeeCalculator.new(
+      base_amount: base_legal_fee,
+      selected_payment_plan: selected_payment_plan
+    )
+    administration_fee = fee_calculator.fee_amount
+
     plan.assign_attributes(
       name: @plan_params[:name],
-      duration: @plan_params[:duration],
-      total_payment: @plan_params[:total_payment],
-      total_interest_amount: @plan_params[:total_interest],
+      duration: duration,
+      total_payment: base_legal_fee,
+      total_interest_amount: administration_fee,
       monthly_payment: @plan_params[:monthly_payment],
-      monthly_interest_amount: @plan_params[:monthly_interest],
+      monthly_interest_amount: duration.positive? ? (administration_fee / duration).round(2) : 0,
       down_payment: @plan_params[:down_payment],
       status: :active
     )
