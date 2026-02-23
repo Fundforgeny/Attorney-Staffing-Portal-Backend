@@ -28,6 +28,8 @@ ActiveAdmin.register Payment do
     column :plan
     column :payment_type
     column :payment_amount
+    column("Administration Fee") { |payment| number_to_currency(payment.transaction_fee || 0) }
+    column("Total Charged") { |payment| number_to_currency(payment.total_payment_including_fee || 0) }
     column :status do |payment|
       status_tag payment.status
     end
@@ -45,8 +47,8 @@ ActiveAdmin.register Payment do
       row :plan
       row :payment_type
       row :payment_amount
-      row :total_payment_including_fee
-      row :transaction_fee
+      row("Administration Fee") { |payment| number_to_currency(payment.transaction_fee || 0) }
+      row("Total Charged") { |payment| number_to_currency(payment.total_payment_including_fee || 0) }
       row :status do |payment|
         status_tag payment.status
       end
@@ -62,8 +64,8 @@ ActiveAdmin.register Payment do
       f.input :plan
       f.input :payment_type
       f.input :payment_amount
-      f.input :total_payment_including_fee
-      f.input :transaction_fee
+      f.input :transaction_fee, label: "Administration Fee"
+      f.input :total_payment_including_fee, label: "Total Charged"
       f.input :status
       f.input :scheduled_at, as: :datetime_picker
       f.input :paid_at, as: :datetime_picker

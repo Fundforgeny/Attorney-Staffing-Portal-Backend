@@ -27,8 +27,32 @@ class Plan < ApplicationRecord
   end
 
   def remaining_balance_logic
-    total_due = total_payment + total_interest_amount
+    total_due = total_payment_plan_amount
     total_paid = payments.where(status: :succeeded).sum(:total_payment_including_fee)
     total_due - total_paid
+  end
+
+  def payment_plan_selected?
+    duration.to_i.positive?
+  end
+
+  def administration_fee_name
+    PaymentPlanFeeCalculator::FEE_NAME
+  end
+
+  def administration_fee_percentage
+    (PaymentPlanFeeCalculator::FEE_PERCENTAGE * 100).to_i
+  end
+
+  def administration_fee_amount
+    (total_interest_amount || 0).to_d
+  end
+
+  def base_legal_fee_amount
+    (total_payment || 0).to_d
+  end
+
+  def total_payment_plan_amount
+    base_legal_fee_amount + administration_fee_amount
   end
 end
