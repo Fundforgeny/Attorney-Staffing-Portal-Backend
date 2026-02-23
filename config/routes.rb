@@ -31,6 +31,10 @@ Rails.application.routes.draw do
   # config/routes.rb
   namespace :api do
     namespace :v1 do
+      namespace :auth do
+        resource :login_link, only: [ :create, :show ], controller: "login_links"
+      end
+
       post 'payments/create_user_plan', to: 'payments#create_user_plan'
       post 'magic_links/create_user_with_magic_link', to: 'magic_links#create_user_with_magic_link'
       post 'payments/checkout', to: 'payments#checkout'

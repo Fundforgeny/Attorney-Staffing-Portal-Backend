@@ -51,40 +51,139 @@ ActiveAdmin.register Plan do
   end
 
   show do
-    attributes_table do
-      row :id
-      row :name
-      row :user
-      row :duration
-      row :total_payment
-      row :total_interest_amount
-      row :monthly_payment
-      row :monthly_interest_amount
-      row :down_payment
-      row :status do |plan|
-        status_tag plan.status
-      end
-      row :created_at
-      row :updated_at
-    end
+    plan = resource
+    user = plan.user
+    payments = plan.payments.includes(:payment_method).order(created_at: :desc)
+    agreement = plan.agreement
+    primary_firm = user&.firm
+    associated_firms = user ? user.firms : Firm.none
 
-    panel "Payments for this Plan" do
-      payments = Payment.where(plan_id: resource.id).order(created_at: :desc)
-
-      if payments.any?
-        table_for payments do
-          column :user_id
-          column :payment_amount
-          column :transaction_fee
-          column :total_payment_including_fee
-          column :status do |payment|
-            status_tag payment.status
+    panel "Plan Details" do
+      div class: "aa-plan-accordion" do
+        details open: true, class: "aa-accordion-item" do
+          summary "Plan Summary"
+          div class: "aa-accordion-body" do
+            attributes_table_for plan do
+              row :id
+              row :name
+              row :duration
+              row :total_payment
+              row :total_interest_amount
+              row :monthly_payment
+              row :monthly_interest_amount
+              row :down_payment
+              row :status do |record|
+                status_tag record.status
+              end
+              row :created_at
+              row :updated_at
+            end
           end
-          column :paid_at
-          column :created_at
         end
-      else
-        para "No payments found for this plan"
+
+        details class: "aa-accordion-item" do
+          summary "User Information"
+          div class: "aa-accordion-body" do
+            if user.present?
+              attributes_table_for user do
+                row :id
+                row :email
+                row :first_name
+                row :last_name
+                row :phone
+                row :user_type
+                row :city
+                row :state
+                row :country
+                row("Primary Firm") { primary_firm&.name || "N/A" }
+                row("All Firms") do
+                  firm_names = associated_firms.pluck(:name)
+                  firm_names.any? ? firm_names.join(", ") : "N/A"
+                end
+              end
+            else
+              para "No user found for this plan."
+            end
+          end
+        end
+
+        details class: "aa-accordion-item" do
+          summary "Card Details"
+          div class: "aa-accordion-body" do
+            if user&.payment_method.present?
+              attributes_table_for user.payment_method do
+                row :provider
+                row :card_brand
+                row :last4
+                row :exp_month
+                row :exp_year
+                row :cardholder_name
+                row :created_at
+              end
+            else
+              para "No card details found."
+            end
+          end
+        end
+
+        details class: "aa-accordion-item" do
+          summary "Payments"
+          div class: "aa-accordion-body" do
+            if payments.any?
+              table_for payments do
+                column :id
+                column :payment_type
+                column :payment_amount
+                column :transaction_fee
+                column :total_payment_including_fee
+                column :status do |payment|
+                  status_tag payment.status
+                end
+                column("Card") do |payment|
+                  payment_method = payment.payment_method
+                  if payment_method.present?
+                    "#{payment_method.card_brand} ****#{payment_method.last4} (#{payment_method.exp_month}/#{payment_method.exp_year})"
+                  else
+                    "N/A"
+                  end
+                end
+                column :paid_at
+                column :created_at
+              end
+            else
+              para "No payments found for this plan."
+            end
+          end
+        end
+
+        details class: "aa-accordion-item" do
+          summary "Contract Documents"
+          div class: "aa-accordion-body" do
+            if agreement.present?
+              attributes_table_for agreement do
+                row :id
+                row :signed_at
+                row :created_at
+                row("Engagement Letter") do
+                  if agreement.engagement_pdf.attached?
+                    link_to "View Engagement Letter", url_for(agreement.engagement_pdf), target: "_blank", rel: "noopener"
+                  else
+                    "Not available"
+                  end
+                end
+                row("Financing Contract") do
+                  if agreement.pdf.attached?
+                    link_to "View Financing Contract", url_for(agreement.pdf), target: "_blank", rel: "noopener"
+                  else
+                    "Not available"
+                  end
+                end
+              end
+            else
+              para "No agreement found for this plan."
+            end
+          end
+        end
       end
     end
   end
