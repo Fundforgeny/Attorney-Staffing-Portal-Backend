@@ -1,4 +1,6 @@
 ActiveAdmin.register Agreement do
+  menu false
+
   permit_params :user_id, :plan_id, :signed_at
 
   filter :user

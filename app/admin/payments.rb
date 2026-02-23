@@ -1,4 +1,6 @@
 ActiveAdmin.register Payment do
+  menu false
+
   permit_params :user_id, :plan_id, :payment_method_id,:payment_type, :payment_amount, :status, :scheduled_at, :paid_at,:total_payment_including_fee, :transaction_fee
 
   # Add custom scopes for filtering - succeeded will be default

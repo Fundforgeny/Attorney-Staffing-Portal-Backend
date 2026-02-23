@@ -16,6 +16,7 @@ class User < ApplicationRecord
   has_one :payment_method, dependent: :destroy
   has_many :plans, dependent: :destroy
   has_many :agreements, dependent: :destroy
+  has_many :login_link_tokens, dependent: :destroy
 
   # Callbacks
   after_commit :sync_with_ghl_accounts, on: :create
