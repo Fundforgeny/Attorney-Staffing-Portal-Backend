@@ -43,9 +43,14 @@ class Api::V1::PaymentsController < ActionController::API
     ActiveRecord::Base.transaction do
       user = User.find(@checkout_params[:user_id])
       plan = Plan.find(@checkout_params[:plan_id])
-      render_error("Plan does not belong to user") if plan.user != user
+      if plan.user != user
+        return render_error(message: "Plan does not belong to user", status: :unprocessable_entity)
+      end
+      render_error(message: "Plan is already paid", status: :unprocessable_entity) and return if plan.paid?
+      render_error(message: "Plan is expired", status: :unprocessable_entity) and return if plan.expired?
 
       PaymentService.new(user, plan, @checkout_params[:payment_method], @checkout_params[:first_installment_date]).process_checkout
+      plan.update!(status: :payment_pending) unless plan.paid?
       
       render_success(
         data: {user_id: user.id, plan_id: plan.id},
@@ -60,7 +65,9 @@ class Api::V1::PaymentsController < ActionController::API
   def process_payment
     @user = User.find(@payment_params[:user_id])
     @plan = Plan.find(@payment_params[:plan_id])
-    render_error("Plan does not belong to user") unless @plan.user_id == @user.id
+    unless @plan.user_id == @user.id
+      return render_error(message: "Plan does not belong to user", status: :unprocessable_entity)
+    end
     result = SpreedlyService.new(@user, @plan, @payment_params).process_payment
     
     if result[:success]
@@ -183,13 +190,32 @@ class Api::V1::PaymentsController < ActionController::API
   private
 
   def set_signature_params
-    required_params = [:user_id, :agreement_id, :signature]
-    missing_params = required_params.select { |param| params[param].blank? }
-    render_error("Missing required parameters: #{missing_params.join(', ')}") unless missing_params.empty?
+    @signature_params = params.permit(:signature, :user_id, :agreement_id, :checkout_session_id)
+    if @signature_params[:signature].blank?
+      return render_error(message: "Missing required parameters: signature", status: :bad_request)
+    end
 
-    @user = User.find(params[:user_id])
-    @agreement = Agreement.find(params[:agreement_id])
-    @signature_params = params.permit(:signature)
+    if @signature_params[:agreement_id].present? && @signature_params[:user_id].present?
+      @user = User.find(@signature_params[:user_id])
+      @agreement = Agreement.find(@signature_params[:agreement_id])
+      return
+    end
+
+    if @signature_params[:checkout_session_id].present?
+      plan = Plan.find_by(checkout_session_id: @signature_params[:checkout_session_id])
+      return render_error(message: "Plan not found", status: :not_found) if plan.blank?
+
+      @agreement = plan.agreement
+      return render_error(message: "Agreement not found for plan", status: :not_found) if @agreement.blank?
+
+      @user = plan.user
+      return
+    end
+
+    render_error(
+      message: "Missing required parameters: user_id and agreement_id, or checkout_session_id",
+      status: :bad_request
+    )
   end
 
   def set_payment_params
@@ -203,6 +229,7 @@ class Api::V1::PaymentsController < ActionController::API
   def set_user_params
     @user_params = params.require(:user).permit(:name, :email)
     @plan_params = params.require(:plan).permit(
+      :checkout_session_id,
       :name,
       :duration,
       :total_payment,

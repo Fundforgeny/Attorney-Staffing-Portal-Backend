@@ -1,6 +1,14 @@
 ActiveAdmin.register Plan do
   permit_params :name,:duration,:total_payment,:total_interest_amount,:monthly_payment,:monthly_interest_amount,:down_payment,:status,:user_id
   
+  controller do
+    def scoped_collection
+      return super unless action_name == "index"
+
+      super.where(status: Plan.statuses[:paid])
+    end
+  end
+
   filter :name
   filter :user
   filter :duration
@@ -195,11 +203,11 @@ ActiveAdmin.register Plan do
       f.input :user
       f.input :name
       f.input :duration
-      f.input :total_payment
-      f.input :total_interest_amount
-      f.input :monthly_payment
-      f.input :monthly_interest_amount
-      f.input :down_payment
+      f.input :total_payment, min: 0.01
+      f.input :total_interest_amount, min: 0
+      f.input :monthly_payment, min: 0
+      f.input :monthly_interest_amount, min: 0
+      f.input :down_payment, min: 0
       f.input :status, as: :select, collection: Plan.statuses.keys.map { |status| [status.to_s.humanize, status] }
     end
     f.actions

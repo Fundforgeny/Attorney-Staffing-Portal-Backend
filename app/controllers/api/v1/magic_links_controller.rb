@@ -48,24 +48,21 @@ class Api::V1::MagicLinksController < ActionController::API
       )
       firm_user.save!
 
-      plan = Plan.where(user_id: user.id, name: "temp_plan").where.not(magic_link_token: [nil, ""])
+      plan = Plan.where(user_id: user.id, name: "temp_plan").where.not(magic_link_token: [nil, ""]).last
+      magic_link_token = plan&.magic_link_token || generate_magic_link_token(user)
+      checkout_session_id = plan&.checkout_session_id || "magic-link-#{magic_link_token}"
 
-      if plan.exists?
-        plan = plan.last
-        magic_link_token = plan.magic_link_token
-      else
-        magic_link_token = generate_magic_link_token(user)
-
-        plan = Plan.create!(
-          user: user,
-          name: "temp_plan",
-          total_payment: retainer_amount,
-          down_payment: down_payment,
-          monthly_payment: 0,
-          status: :active,
-          magic_link_token: magic_link_token
-        )
-      end
+      plan = Plan.find_or_initialize_by(checkout_session_id: checkout_session_id)
+      plan.assign_attributes(
+        user: user,
+        name: "temp_plan",
+        total_payment: retainer_amount,
+        down_payment: down_payment,
+        monthly_payment: 0,
+        status: :draft,
+        magic_link_token: magic_link_token
+      )
+      plan.save!
 
       frontend_url = "https://payments.fundforge.net/pay"
       magic_link = "#{frontend_url}?token=#{magic_link_token}"

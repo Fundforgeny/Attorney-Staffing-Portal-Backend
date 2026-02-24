@@ -18,3 +18,5 @@ class LoginLinkToken < ApplicationRecord
 end
 
 
+
+

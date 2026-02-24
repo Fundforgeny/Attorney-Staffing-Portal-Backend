@@ -34,13 +34,17 @@ class UserPlanCreationService
   end
 
   def create_plan_instance(user)
-    plan = if @plan_params[:plan_id].present?
+    plan = if @plan_params[:checkout_session_id].present?
+             Plan.find_or_initialize_by(checkout_session_id: @plan_params[:checkout_session_id])
+           elsif @plan_params[:plan_id].present?
              Plan.find_by(id: @plan_params[:plan_id])
            else
              Plan.find_or_initialize_by(user: user, name: @plan_params[:name])
            end
 
     raise ActiveRecord::RecordNotFound, "Plan not found" if @plan_params[:plan_id].present? && plan.nil?
+    raise StandardError, "Plan is already paid" if plan&.paid?
+    raise StandardError, "Plan is expired" if plan&.expired?
 
     duration = @plan_params[:duration].to_i
     selected_payment_plan = PaymentPlanFeeCalculator.plan_selected?(
@@ -55,6 +59,8 @@ class UserPlanCreationService
     administration_fee = fee_calculator.fee_amount
 
     plan.assign_attributes(
+      checkout_session_id: @plan_params[:checkout_session_id].presence || plan.checkout_session_id.presence || SecureRandom.uuid,
+      user: user,
       name: @plan_params[:name],
       duration: duration,
       total_payment: base_legal_fee,
@@ -62,7 +68,7 @@ class UserPlanCreationService
       monthly_payment: @plan_params[:monthly_payment],
       monthly_interest_amount: duration.positive? ? (administration_fee / duration).round(2) : 0,
       down_payment: @plan_params[:down_payment],
-      status: :active
+      status: :draft
     )
 
     plan.save!

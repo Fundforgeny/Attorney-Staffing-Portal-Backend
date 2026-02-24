@@ -3,11 +3,29 @@ class Plan < ApplicationRecord
 	has_one :agreement, dependent: :destroy
   has_many :payments, dependent: :destroy
 
-	enum :status, { active: 0, completed: 1, cancelled: 2 }, default: :active
+	enum :status, {
+    draft: 0,
+    agreement_generated: 1,
+    payment_pending: 2,
+    paid: 3,
+    failed: 4,
+    expired: 5
+  }, default: :draft
+
+  # Backward-compatible scopes for legacy callers that still use old status names.
+  scope :active, -> { where(status: statuses[:draft]) }
+  scope :completed, -> { where(status: statuses[:paid]) }
+  scope :cancelled, -> { where(status: statuses[:failed]) }
+
+  validates :checkout_session_id, presence: true
+  validates :total_payment, numericality: { greater_than: 0 }
+  validates :down_payment, numericality: { greater_than_or_equal_to: 0 }
+  validates :duration, inclusion: { in: [ 3, 6, 9, 12 ] }, allow_nil: true
 
 	def self.ransackable_attributes(auth_object = nil)
     [
       "id",
+      "checkout_session_id",
       "name",
       "duration",
       "total_payment",
@@ -34,6 +52,10 @@ class Plan < ApplicationRecord
 
   def payment_plan_selected?
     duration.to_i.positive?
+  end
+
+  def editable?
+    !paid? && !expired?
   end
 
   def administration_fee_name
