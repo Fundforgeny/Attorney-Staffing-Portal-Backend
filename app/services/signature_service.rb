@@ -67,10 +67,11 @@ class SignatureService
       "pdf" => [130, 430],
       "engagement_pdf" => [130, 670]
     }
-    
-    ::ProcessSignedAgreementWorker.perform_async(
-      @agreement.id, 
-      @agreement.signature.blob.id, 
+
+    # Process synchronously so API response includes finalized signed documents.
+    ::ProcessSignedAgreementWorker.new.perform(
+      @agreement.id,
+      @agreement.signature.blob.id,
       pdf_coordinates
     )
   end
@@ -86,7 +87,18 @@ class SignatureService
       agreement_id: @agreement.id,
       signature_url: signature_url,
       signature_filename: @filename,
-      signed_at: @agreement.signed_at
+      signed_at: @agreement.signed_at,
+      fund_forge_agreement: serialized_attachment(@agreement.pdf),
+      engagement_agreement: serialized_attachment(@agreement.engagement_pdf)
+    }
+  end
+
+  def serialized_attachment(attachment)
+    return nil unless attachment.attached?
+
+    {
+      url: attachment.url,
+      filename: attachment.filename.to_s
     }
   end
 

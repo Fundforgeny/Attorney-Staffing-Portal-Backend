@@ -2,27 +2,24 @@ ActiveAdmin.register_page "Leads" do
   menu priority: 4, label: "Leads"
 
   content title: "Leads" do
-    leads = User.joins(:plans)
-                .where("plans.magic_link_token IS NOT NULL AND plans.magic_link_token != ''")
-                .where.not(id: Payment.succeeded.select(:user_id))
-                .includes(:plans, :firm)
-                .distinct
-                .order("users.id DESC")
+    leads = Plan.includes(:user)
+                .where.not(status: Plan.statuses[:paid])
+                .order(created_at: :desc)
     paginated_leads = leads.page(params[:page]).per(20)
 
-    panel "Unpaid Magic-Link Leads" do
+    panel "Leads (All Non-Paid Plans)" do
       if paginated_leads.any?
         paginated_collection(paginated_leads, download_links: false) do
           table_for collection do
             column :id
-            column :email
-            column :first_name
-            column :last_name
-            column :phone
-            column("Firm") { |lead| lead.firm&.name || "N/A" }
-            column("Latest Plan") { |lead| lead.plans.max_by(&:created_at)&.name || "N/A" }
-            column("Actions") do |lead|
-              link_to("View User", admin_user_path(lead))
+            column("Plan") { |plan| plan.name }
+            column("Status") { |plan| status_tag(plan.status) }
+            column("User Email") { |plan| plan.user&.email || "N/A" }
+            column("User Name") { |plan| plan.user&.full_name || "N/A" }
+            column("Total Payment") { |plan| number_to_currency(plan.total_payment || 0) }
+            column("Created At", &:created_at)
+            column("Actions") do |plan|
+              link_to("View Plan", admin_plan_path(plan))
             end
           end
         end

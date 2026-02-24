@@ -29,6 +29,9 @@ class PaymentService
   end
 
   def create_payment_schedule(payment_method)
+    # Rebuilding the schedule makes repeated checkout calls idempotent.
+    @plan.payments.destroy_all
+
     payments = []
     payments << create_down_payment(payment_method) if @plan.down_payment > 0
     payments.concat(create_monthly_installments(payment_method)) if @plan.duration > 0

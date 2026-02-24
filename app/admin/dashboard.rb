@@ -7,10 +7,10 @@ ActiveAdmin.register_page "Dashboard" do
     total_attorneys = User.attorney.count
     total_firms = Firm.count
 
-    total_plans = Plan.count
-    active_plans = Plan.active.count
-    completed_plans = Plan.completed.count
-    cancelled_plans = Plan.cancelled.count
+    draft_plans = Plan.draft.count
+    paid_plans = Plan.paid.count
+    failed_plans = Plan.failed.count
+    total_plans = paid_plans
 
     total_payments = Payment.count
     succeeded_payments = Payment.succeeded.count
@@ -25,11 +25,7 @@ ActiveAdmin.register_page "Dashboard" do
     total_agreements = Agreement.count
     signed_agreements = Agreement.where.not(signed_at: nil).count
 
-    lead_count = User.joins(:plans)
-                     .where("plans.magic_link_token IS NOT NULL AND plans.magic_link_token != ''")
-                     .where.not(id: Payment.where(status: :succeeded).select(:user_id))
-                     .distinct
-                     .count
+    lead_count = Plan.where.not(status: Plan.statuses[:paid]).count
 
     monthly_labels = []
     monthly_revenue = []
@@ -53,7 +49,7 @@ ActiveAdmin.register_page "Dashboard" do
         month_end
       ).count
 
-      monthly_new_plans << Plan.where(created_at: month_start..month_end).count
+      monthly_new_plans << Plan.paid.where(created_at: month_start..month_end).count
     end
 
     payment_status_data = [
@@ -63,9 +59,9 @@ ActiveAdmin.register_page "Dashboard" do
     ]
 
     plan_status_data = [
-      active_plans,
-      completed_plans,
-      cancelled_plans
+      draft_plans,
+      paid_plans,
+      failed_plans
     ]
 
     top_firms = Firm.left_joins(:users)
@@ -75,7 +71,7 @@ ActiveAdmin.register_page "Dashboard" do
                     .pluck(:name, Arel.sql("COUNT(users.id)"))
 
     recent_payments = Payment.order(created_at: :desc).limit(6)
-    recent_plans = Plan.order(created_at: :desc).limit(6)
+    recent_plans = Plan.paid.order(created_at: :desc).limit(6)
 
     div class: "aa-dashboard" do
       div class: "aa-dashboard__hero" do
@@ -90,8 +86,8 @@ ActiveAdmin.register_page "Dashboard" do
           { label: "Users", value: total_users, meta: "#{total_clients} clients / #{total_attorneys} attorneys", tone: "primary" },
           { label: "Revenue", value: number_to_currency(total_revenue), meta: "This month #{number_to_currency(this_month_revenue)}", tone: "warning" },
           { label: "Payments", value: total_payments, meta: "#{succeeded_payments} succeeded", tone: "info" },
-          { label: "Plans", value: total_plans, meta: "#{active_plans} active", tone: "success" },
-          { label: "Leads", value: lead_count, meta: "Unpaid magic-link users", tone: "danger" },
+          { label: "Plans", value: total_plans, meta: "#{paid_plans} paid", tone: "success" },
+          { label: "Leads", value: lead_count, meta: "All non-paid plans", tone: "danger" },
           { label: "Agreements", value: total_agreements, meta: "#{signed_agreements} signed", tone: "purple" }
         ].each do |kpi|
           div class: "aa-kpi aa-kpi--#{kpi[:tone]}" do
@@ -220,14 +216,14 @@ ActiveAdmin.register_page "Dashboard" do
         div class: "aa-dashboard-tabs__panel", data: { tab_panel: "ops" } do
           div class: "aa-grid aa-grid--2" do
             div class: "aa-card" do
-              h3 "New Plans (Last 6 Months)", class: "aa-card__title"
+              h3 "New Paid Plans (Last 6 Months)", class: "aa-card__title"
               div class: "aa-chart-wrap" do
                 canvas id: "aaPlanCreationChart", height: "180"
               end
             end
 
             div class: "aa-card" do
-              h3 "Latest Plans", class: "aa-card__title"
+              h3 "Latest Paid Plans", class: "aa-card__title"
               if recent_plans.any?
                 div class: "aa-table-scroll" do
                   table class: "aa-mini-table" do
@@ -353,7 +349,7 @@ ActiveAdmin.register_page "Dashboard" do
                 new Chart(planCtx, {
                   type: "pie",
                   data: {
-                    labels: ["Active", "Completed", "Cancelled"],
+                    labels: ["Draft", "Paid", "Failed"],
                     datasets: [{
                       data: data.plan_status,
                       backgroundColor: ["#1F6CB0", "rgba(31, 108, 176, 0.82)", "rgba(31, 108, 176, 0.64)"],
@@ -408,7 +404,7 @@ ActiveAdmin.register_page "Dashboard" do
                   data: {
                     labels: data.labels,
                     datasets: [{
-                      label: "New Plans",
+                      label: "New Paid Plans",
                       data: data.monthly_new_plans,
                       backgroundColor: "rgba(23,162,184,0.72)",
                       borderRadius: 8

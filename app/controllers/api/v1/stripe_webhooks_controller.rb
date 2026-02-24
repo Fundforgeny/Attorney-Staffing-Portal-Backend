@@ -91,6 +91,6 @@ class Api::V1::StripeWebhooksController < ActionController::API
       user.payment_method&.update!(stripe_payment_method_id: payment_method_id)
     end
 
-    payment.plan.update!(status: :completed) if payment.payment_type == 'full_payment'
+    payment.plan.update!(status: :paid) if payment.payment_type == 'full_payment'
   end
 end
