@@ -31,6 +31,11 @@ Rails.application.routes.draw do
   # config/routes.rb
   namespace :api do
     namespace :v1 do
+      resources :plans, only: [ :create, :show ], param: :checkout_session_id
+      post "plans/:checkout_session_id/generate_agreement", to: "plans#generate_agreement"
+      post "plans/:checkout_session_id/mark_payment_success", to: "plans#mark_payment_success"
+      post "plans/:checkout_session_id/mark_payment_failed", to: "plans#mark_payment_failed"
+
       namespace :auth do
         resource :login_link, only: [ :create, :show ], controller: "login_links"
       end

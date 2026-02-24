@@ -113,8 +113,8 @@ class Api::V1::PlansController < ActionController::API
 
     return if requested_months.blank?
 
-    unless [ 3, 6, 9, 12 ].include?(requested_months.to_i)
-      return render_error(message: "months must be one of: 3, 6, 9, 12", status: :bad_request)
+    unless [ 0, 3, 6, 9, 12 ].include?(requested_months.to_i)
+      return render_error(message: "months must be one of: 0, 3, 6, 9, 12", status: :bad_request)
     end
   end
 

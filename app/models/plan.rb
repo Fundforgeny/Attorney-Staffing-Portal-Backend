@@ -20,7 +20,7 @@ class Plan < ApplicationRecord
   validates :checkout_session_id, presence: true
   validates :total_payment, numericality: { greater_than: 0 }
   validates :down_payment, numericality: { greater_than_or_equal_to: 0 }
-  validates :duration, inclusion: { in: [ 3, 6, 9, 12 ] }, allow_nil: true
+  validates :duration, inclusion: { in: [ 0, 3, 6, 9, 12 ] }, allow_nil: true
 
 	def self.ransackable_attributes(auth_object = nil)
     [
