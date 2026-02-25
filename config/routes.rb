@@ -35,6 +35,9 @@ Rails.application.routes.draw do
       post "plans/:checkout_session_id/generate_agreement", to: "plans#generate_agreement"
       post "plans/:checkout_session_id/mark_payment_success", to: "plans#mark_payment_success"
       post "plans/:checkout_session_id/mark_payment_failed", to: "plans#mark_payment_failed"
+      resources :payment_methods, only: [ :index, :show, :create, :update, :destroy ] do
+        post :set_default, on: :member
+      end
 
       namespace :auth do
         resource :login_link, only: [ :create, :show ], controller: "login_links"
