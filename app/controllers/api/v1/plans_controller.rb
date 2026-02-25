@@ -14,13 +14,8 @@ class Api::V1::PlansController < ActionController::API
         plan = Plan.find_or_initialize_by(checkout_session_id: normalized_create_params[:checkout_session_id])
         user = resolve_user!(plan)
 
-        if plan.persisted? && plan.paid?
-          return render_error(message: "Plan is already paid", status: :unprocessable_entity)
-        end
-
-        if plan.persisted? && plan.expired?
-          return render_error(message: "Plan is expired", status: :unprocessable_entity)
-        end
+        return render_error(message: "Plan is already paid", status: :unprocessable_entity) if plan.persisted? && plan.paid?
+        return render_error(message: "Plan is expired", status: :unprocessable_entity) if plan.persisted? && plan.expired?
 
         created = plan.new_record?
         assign_plan_attributes(plan, user)
@@ -59,18 +54,14 @@ class Api::V1::PlansController < ActionController::API
   end
 
   def mark_payment_success
-    if @plan.paid?
-      return render_error(message: "Plan is already paid", status: :unprocessable_entity)
-    end
+    return render_error(message: "Plan is already paid", status: :unprocessable_entity) if @plan.paid?
 
     @plan.update!(status: :paid)
     render_success(data: serialized_plan(@plan), message: "Plan marked as paid", status: :ok)
   end
 
   def mark_payment_failed
-    if @plan.paid?
-      return render_error(message: "Paid plan cannot be marked as failed", status: :unprocessable_entity)
-    end
+    return render_error(message: "Paid plan cannot be marked as failed", status: :unprocessable_entity) if @plan.paid?
 
     @plan.update!(status: :failed)
     render_success(data: serialized_plan(@plan), message: "Plan marked as failed", status: :ok)
@@ -80,7 +71,9 @@ class Api::V1::PlansController < ActionController::API
 
   def set_plan
     @plan = Plan.find_by(checkout_session_id: params[:checkout_session_id])
-    return render_error(message: "Plan not found", status: :not_found) if @plan.blank?
+    return if @plan.present?
+
+    render_error(message: "Plan not found", status: :not_found)
   end
 
   def normalized_create_params
@@ -96,25 +89,19 @@ class Api::V1::PlansController < ActionController::API
   end
 
   def validate_create_params
-    required_params = [ :checkout_session_id ]
-    missing_params = required_params.select { |key| normalized_create_params[key].blank? }
-    if missing_params.any?
-      return render_error(message: "Missing required parameters: #{missing_params.join(', ')}", status: :bad_request)
-    end
+    missing_params = [ :checkout_session_id ].select { |key| normalized_create_params[key].blank? }
+    return render_error(message: "Missing required parameters: #{missing_params.join(', ')}", status: :bad_request) if missing_params.any?
 
     existing_plan = Plan.find_by(checkout_session_id: normalized_create_params[:checkout_session_id])
     if existing_plan.blank?
-      create_required_params = [ :email, :total_amount, :down_payment ]
-      missing_create_params = create_required_params.select { |key| normalized_create_params[key].blank? }
-      if missing_create_params.any?
-        return render_error(message: "Missing required parameters: #{missing_create_params.join(', ')}", status: :bad_request)
-      end
+      create_missing_params = [ :email, :total_amount, :down_payment ].select { |key| normalized_create_params[key].blank? }
+      return render_error(message: "Missing required parameters: #{create_missing_params.join(', ')}", status: :bad_request) if create_missing_params.any?
     end
 
     return if requested_months.blank?
 
     unless [ 0, 3, 6, 9, 12 ].include?(requested_months.to_i)
-      return render_error(message: "months must be one of: 0, 3, 6, 9, 12", status: :bad_request)
+      render_error(message: "months must be one of: 0, 3, 6, 9, 12", status: :bad_request)
     end
   end
 
@@ -141,9 +128,9 @@ class Api::V1::PlansController < ActionController::API
     months = requested_months.present? ? requested_months.to_i : plan.duration
     total_amount = normalized_create_params[:total_amount].present? ? normalized_create_params[:total_amount].to_d : plan.total_payment
     down_payment = normalized_create_params[:down_payment].present? ? normalized_create_params[:down_payment].to_d : plan.down_payment
-
     total_amount ||= 0.to_d
     down_payment ||= 0.to_d
+
     selected_payment_plan = PaymentPlanFeeCalculator.plan_selected?(selected_payment_plan: true, duration: months)
     fee_calculator = PaymentPlanFeeCalculator.new(base_amount: total_amount, selected_payment_plan: selected_payment_plan)
     administration_fee = fee_calculator.fee_amount
@@ -167,7 +154,6 @@ class Api::V1::PlansController < ActionController::API
 
   def serialized_plan(plan)
     agreement = plan.agreement
-
     {
       id: plan.id,
       user_id: plan.user_id,

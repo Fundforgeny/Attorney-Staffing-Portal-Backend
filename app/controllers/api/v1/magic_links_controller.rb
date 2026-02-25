@@ -50,7 +50,9 @@ class Api::V1::MagicLinksController < ActionController::API
 
       plan = Plan.where(user_id: user.id, name: "temp_plan").where.not(magic_link_token: [nil, ""]).last
       magic_link_token = plan&.magic_link_token || generate_magic_link_token(user)
-      checkout_session_id = plan&.checkout_session_id || "magic-link-#{magic_link_token}"
+      # Keep checkout_session_id aligned with token so frontend can resume
+      # with the same identifier from the magic link URL.
+      checkout_session_id = magic_link_token
 
       plan = Plan.find_or_initialize_by(checkout_session_id: checkout_session_id)
       plan.assign_attributes(
@@ -96,6 +98,16 @@ class Api::V1::MagicLinksController < ActionController::API
     plan = Plan.find_by(magic_link_token: token)
     return render_error(message: "Plan not found", status: :bad_request) if plan.blank?
 
+    # Backfill legacy records created with "magic-link-<token>" so resume API
+    # can use the same token value as checkout_session_id.
+    if plan.checkout_session_id.present? && plan.checkout_session_id != token
+      begin
+        plan.update!(checkout_session_id: token)
+      rescue ActiveRecord::RecordNotUnique
+        # Keep existing session id if another row already owns token as checkout id.
+      end
+    end
+
     user = User.find_by(id: plan.user_id)
     return render_error(message: "User not found", status: :not_found) if user.blank?
 
@@ -105,6 +117,8 @@ class Api::V1::MagicLinksController < ActionController::API
         name: user.first_name + " " + user.last_name,
         email: user.email,
         plan_id: plan.id,
+        checkout_session_id: plan.checkout_session_id,
+        token: token,
         total_amount: plan.total_payment.to_f,
         total_payment: plan.total_payment.to_f,
         down_payment: plan.down_payment.to_i,
