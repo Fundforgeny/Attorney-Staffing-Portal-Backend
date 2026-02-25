@@ -22,20 +22,22 @@ class SpreedlyService
       payment_method = update_payment_method
       payment = find_payment
       result = make_purchase(payment, payment_method.vault_token)
-      
-      if result[:success]
-        update_payment_status(payment, result[:body]["transaction"])
+
+      transaction = result.dig(:body, "transaction")
+      if result[:success] && transaction_succeeded?(transaction)
+        update_payment_status(payment, transaction, :succeeded)
         return {
           success: true,
           data: {
-            transaction_token: result[:body]["transaction"]["token"],
-            state: result[:body]["transaction"]["state"],
-            amount: result[:body]["transaction"]["amount"],
-            currency: result[:body]["transaction"]["currency_code"],
+            transaction_token: transaction["token"],
+            state: transaction["state"],
+            amount: transaction["amount"],
+            currency: transaction["currency_code"],
             payment_type: payment.payment_type
           }
         }
       else
+        update_payment_status(payment, transaction, :failed)
         error_message = extract_spreedly_error(result[:body])
         return { success: false, error: "Payment failed: #{error_message}", status: :payment_required }
       end
@@ -115,12 +117,18 @@ class SpreedlyService
     purchase_payment(ENV["GATEWAY_TOKEN"], vault_token, amount_in_cents, 'USD', purchase_options)
   end
   
-  def update_payment_status(payment, transaction_data)
+  def update_payment_status(payment, transaction_data, status)
     payment.update!(
-      charge_id: transaction_data["token"],
-      status: transaction_data["state"]&.downcase,
-      paid_at: Time.current
+      charge_id: transaction_data&.dig("token") || payment.charge_id,
+      status: status,
+      paid_at: status.to_sym == :succeeded ? Time.current : nil
     )
+  end
+
+  def transaction_succeeded?(transaction_data)
+    return false if transaction_data.blank?
+
+    ActiveModel::Type::Boolean.new.cast(transaction_data["succeeded"]) || transaction_data["state"].to_s == "succeeded"
   end
   
   def extract_spreedly_error(response_body)

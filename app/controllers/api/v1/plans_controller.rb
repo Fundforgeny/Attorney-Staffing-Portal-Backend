@@ -59,8 +59,14 @@ class Api::V1::PlansController < ActionController::API
   end
 
   def mark_payment_success
-    if @plan.paid?
-      return render_error(message: "Plan is already paid", status: :unprocessable_entity)
+    return render_error(message: "Plan is already paid", status: :unprocessable_entity) if @plan.paid?
+
+    succeeded_payment = @plan.payments.where(status: :succeeded).order(paid_at: :desc).first
+    unless succeeded_payment.present?
+      return render_error(
+        message: "Cannot mark paid without a successful charged payment",
+        status: :unprocessable_entity
+      )
     end
 
     @plan.update!(status: :paid)
