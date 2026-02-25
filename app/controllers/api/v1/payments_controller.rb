@@ -71,8 +71,10 @@ class Api::V1::PaymentsController < ActionController::API
     result = SpreedlyService.new(@user, @plan, @payment_params).process_payment
     
     if result[:success]
+      @plan.update!(status: :paid) if result.dig(:data, :payment_type).to_s == "full_payment"
       render_success(data: result[:data], message: "Payment processed successfully", status: :ok)
     else
+      @plan.update!(status: :failed) unless @plan.paid?
       render_error(message: result[:error], status: result[:status] || :unprocessable_entity)
     end
   rescue StandardError => e
