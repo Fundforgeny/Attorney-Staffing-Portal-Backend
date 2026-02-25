@@ -105,6 +105,8 @@ class Api::V1::MagicLinksController < ActionController::API
         name: user.first_name + " " + user.last_name,
         email: user.email,
         plan_id: plan.id,
+        total_amount: plan.total_payment.to_f,
+        total_payment: plan.total_payment.to_f,
         down_payment: plan.down_payment.to_i,
         base_legal_fee: plan.base_legal_fee_amount.to_f,
         administration_fee_name: plan.administration_fee_name,
