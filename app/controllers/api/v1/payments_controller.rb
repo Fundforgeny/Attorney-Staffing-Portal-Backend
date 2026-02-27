@@ -68,8 +68,17 @@ class Api::V1::PaymentsController < ActionController::API
     unless @plan.user_id == @user.id
       return render_error(message: "Plan does not belong to user", status: :unprocessable_entity)
     end
+
+    # Backward-compatible behavior:
+    # - when require_3ds is false/missing => existing direct process_payment path
+    # - when require_3ds is true => initiate 3DS challenge or complete an existing 3DS session
+    if require_three_ds?
+      return complete_three_ds_payment! if @payment_params[:three_ds_session_id].present?
+      return start_three_ds_payment!
+    end
+
     result = SpreedlyService.new(@user, @plan, @payment_params).process_payment
-    
+
     if result[:success]
       @plan.update!(status: :paid) if result.dig(:data, :payment_type).to_s == "full_payment"
       render_success(data: result[:data], message: "Payment processed successfully", status: :ok)
@@ -221,7 +230,15 @@ class Api::V1::PaymentsController < ActionController::API
   end
 
   def set_payment_params
-    @payment_params = params.permit(:user_id, :plan_id, :vault_token, :card_brand)
+    @payment_params = params.permit(
+      :user_id,
+      :plan_id,
+      :vault_token,
+      :card_brand,
+      :payment_method_id,
+      :three_ds_session_id,
+      :require_3ds
+    )
   end
 
   def set_checkout_params
@@ -286,4 +303,159 @@ class Api::V1::PaymentsController < ActionController::API
   #   })
   #   user.update!(stripe_customer_id: customer.id)
   # end
+
+  def require_three_ds?
+    ActiveModel::Type::Boolean.new.cast(@payment_params[:require_3ds])
+  end
+
+  def start_three_ds_payment!
+    payment_method = resolve_payment_method_for_three_ds!
+    payment = resolve_payment_for_three_ds!
+    payment.update!(payment_method: payment_method) if payment.payment_method_id != payment_method.id
+
+    callback_token = SecureRandom.hex(24)
+    callback_url = "#{request.base_url}/api/v1/payments/3ds/callback?callback_token=#{callback_token}"
+    redirect_url = ENV["SPREEDLY_3DS_RETURN_URL"].presence || "#{ENV.fetch('FRONTEND_APP_URL', 'http://localhost:5173').to_s.chomp('/')}/pay/3ds-complete"
+
+    transaction = Spreedly::ThreeDsService.new.initiate_purchase(
+      gateway_token: ENV["GATEWAY_TOKEN"].to_s,
+      payment_method_token: payment_method.vault_token,
+      amount_cents: (payment.total_payment_including_fee.to_d * 100).to_i,
+      currency: "USD",
+      callback_url: callback_url,
+      redirect_url: redirect_url
+    )
+
+    challenge_url = Spreedly::ThreeDsService.new.extract_challenge_url(transaction)
+    session_status = derive_three_ds_session_status(transaction["state"], challenge_url)
+    session = Payment3dsSession.create!(
+      user: @user,
+      plan: @plan,
+      payment: payment,
+      payment_method: payment_method,
+      status: session_status,
+      callback_token: callback_token,
+      spreedly_transaction_token: transaction["token"],
+      challenge_url: challenge_url,
+      raw_response: transaction
+    )
+
+    if three_ds_terminal_state?(transaction["state"])
+      apply_three_ds_transaction_result!(payment, @plan, transaction)
+      return render_terminal_three_ds_response!(session, payment, transaction)
+    end
+
+    render_success(
+      data: {
+        status: "action_required",
+        three_ds_required: true,
+        three_ds_session_id: session.id,
+        challenge_url: challenge_url,
+        transaction_token: transaction["token"],
+        expires_at: 15.minutes.from_now.iso8601
+      },
+      message: "3DS verification required",
+      status: :ok
+    )
+  end
+
+  def complete_three_ds_payment!
+    session = Payment3dsSession.find_by(id: @payment_params[:three_ds_session_id], user_id: @user.id, plan_id: @plan.id)
+    return render_error(message: "3DS session not found", status: :not_found) if session.blank?
+
+    transaction = Spreedly::ThreeDsService.new.fetch_transaction(transaction_token: session.spreedly_transaction_token)
+    session_status = derive_three_ds_session_status(transaction["state"], session.challenge_url)
+    session.update!(
+      raw_response: transaction,
+      status: session_status,
+      completed_at: three_ds_terminal_state?(transaction["state"]) ? Time.current : nil
+    )
+
+    unless three_ds_terminal_state?(transaction["state"])
+      return render_success(
+        data: {
+          status: session.status,
+          three_ds_required: true,
+          three_ds_session_id: session.id,
+          challenge_url: session.challenge_url,
+          transaction_token: session.spreedly_transaction_token
+        },
+        message: "3DS verification still in progress",
+        status: :ok
+      )
+    end
+
+    apply_three_ds_transaction_result!(session.payment, session.plan, transaction)
+    render_terminal_three_ds_response!(session, session.payment, transaction)
+  end
+
+  def resolve_payment_method_for_three_ds!
+    if @payment_params[:payment_method_id].present?
+      return @user.payment_methods.find(@payment_params[:payment_method_id])
+    end
+
+    if @payment_params[:vault_token].present?
+      payment_method = @user.payment_methods.find_or_initialize_by(vault_token: @payment_params[:vault_token])
+      payment_method.provider = "Spreedly Vault" if payment_method.provider.blank?
+      payment_method.card_brand = @payment_params[:card_brand] if @payment_params[:card_brand].present?
+      payment_method.last_updated_via_spreedly_at = Time.current
+      payment_method.save! if payment_method.changed?
+      return payment_method
+    end
+
+    default_payment_method = @user.payment_methods.ordered_for_user.first
+    return default_payment_method if default_payment_method.present?
+
+    raise ArgumentError, "Missing payment method: provide payment_method_id or vault_token"
+  end
+
+  def resolve_payment_for_three_ds!
+    payment_type = @plan.duration.to_i > 0 ? "down_payment" : "full_payment"
+    payment = Payment.find_by(user: @user, plan: @plan, payment_type: payment_type)
+    raise ArgumentError, "Payment not found" if payment.blank? || payment.total_payment_including_fee.blank?
+
+    payment
+  end
+
+  def derive_three_ds_session_status(state, challenge_url)
+    return "succeeded" if state.to_s == "succeeded"
+    return "failed" if %w[failed gateway_processing_failed scrubbed].include?(state.to_s)
+    return "challenged" if challenge_url.present?
+
+    "pending"
+  end
+
+  def three_ds_terminal_state?(state)
+    Spreedly::ThreeDsService.new.terminal_state?(state)
+  end
+
+  def apply_three_ds_transaction_result!(payment, plan, transaction)
+    succeeded = ActiveModel::Type::Boolean.new.cast(transaction["succeeded"]) || transaction["state"].to_s == "succeeded"
+
+    payment.update!(
+      charge_id: transaction["token"] || payment.charge_id,
+      status: succeeded ? :succeeded : :failed,
+      paid_at: succeeded ? Time.current : nil
+    )
+    plan.update!(status: :paid) if succeeded && payment.payment_type.to_s == "full_payment"
+    plan.update!(status: :failed) unless succeeded || plan.paid?
+  end
+
+  def render_terminal_three_ds_response!(session, payment, transaction)
+    succeeded = ActiveModel::Type::Boolean.new.cast(transaction["succeeded"]) || transaction["state"].to_s == "succeeded"
+    payload = {
+      status: succeeded ? "succeeded" : "failed",
+      three_ds_required: true,
+      three_ds_session_id: session.id,
+      transaction_token: transaction["token"] || session.spreedly_transaction_token,
+      state: transaction["state"],
+      payment_type: payment.payment_type
+    }
+
+    if succeeded
+      render_success(data: payload, message: "Payment processed successfully", status: :ok)
+    else
+      render_error(message: "Payment failed: #{transaction['message'].presence || '3DS authentication failed'}", status: :payment_required)
+    end
+  end
 end

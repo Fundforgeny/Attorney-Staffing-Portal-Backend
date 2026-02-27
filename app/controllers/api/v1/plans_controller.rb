@@ -164,6 +164,7 @@ class Api::V1::PlansController < ActionController::API
     agreement = plan.agreement
     {
       id: plan.id,
+      plan_id: plan.id,
       user_id: plan.user_id,
       name: plan.name,
       checkout_session_id: plan.checkout_session_id,
