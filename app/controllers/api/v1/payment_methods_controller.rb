@@ -15,7 +15,29 @@ class Api::V1::PaymentMethodsController < ActionController::API
   end
 
   def create
-    payment_method = current_user.payment_methods.new(create_params)
+    if create_params[:vault_token].blank?
+      return render_error(message: "vault_token is required", status: :bad_request)
+    end
+
+    existing = current_user.payment_methods.find_by(vault_token: create_params[:vault_token])
+    if existing.present?
+      return render_success(
+        data: serialize_payment_method(existing),
+        message: "Payment method already saved",
+        status: :ok
+      )
+    end
+
+    payment_method = current_user.payment_methods.new(
+      provider: create_params[:provider].presence || "Spreedly Vault",
+      vault_token: create_params[:vault_token],
+      last4: create_params[:last4],
+      card_brand: create_params[:card_brand],
+      exp_month: create_params[:exp_month],
+      exp_year: create_params[:exp_year],
+      cardholder_name: create_params[:cardholder_name],
+      last_updated_via_spreedly_at: Time.current
+    )
 
     ActiveRecord::Base.transaction do
       if ActiveModel::Type::Boolean.new.cast(create_params[:is_default]) || current_user.payment_methods.blank?
@@ -35,17 +57,34 @@ class Api::V1::PaymentMethodsController < ActionController::API
   end
 
   def update
+    spreedly = Spreedly::PaymentMethodsService.new
+    spreadly_updated = spreedly.update_payment_method(
+      token: @payment_method.vault_token,
+      full_name: update_params[:cardholder_name],
+      email: update_params[:billing_email],
+      zip: update_params[:billing_zip],
+      metadata: update_params[:metadata]
+    )
+
     ActiveRecord::Base.transaction do
       if update_params.key?(:is_default) && ActiveModel::Type::Boolean.new.cast(update_params[:is_default])
         current_user.payment_methods.update_all(is_default: false)
       end
 
-      @payment_method.update!(update_params)
+      @payment_method.update!(
+        cardholder_name: spreadly_updated["full_name"],
+        exp_month: spreadly_updated["month"] || @payment_method.exp_month,
+        exp_year: spreadly_updated["year"] || @payment_method.exp_year,
+        last_updated_via_spreedly_at: Time.current,
+        is_default: update_params[:is_default].nil? ? @payment_method.is_default : ActiveModel::Type::Boolean.new.cast(update_params[:is_default])
+      )
     end
 
     render_success(data: serialize_payment_method(@payment_method), message: "Payment method updated successfully", status: :ok)
   rescue ActiveRecord::RecordInvalid => e
     render_error(errors: e.record.errors.full_messages, status: :unprocessable_entity)
+  rescue Spreedly::Error => e
+    render_error(message: e.message, status: :unprocessable_entity)
   end
 
   def set_default
@@ -59,6 +98,16 @@ class Api::V1::PaymentMethodsController < ActionController::API
 
   def destroy
     deleted_default = @payment_method.is_default?
+    begin
+      if @payment_method.vault_token.present?
+        Spreedly::PaymentMethodsService.new.redact_payment_method(token: @payment_method.vault_token)
+      end
+    rescue Spreedly::Error => e
+      # If card is already absent in Spreedly, delete local record anyway.
+      raise e unless spreedly_payment_method_missing?(e)
+    end
+
+    @payment_method.update!(spreedly_redacted_at: Time.current, vault_token: nil)
     @payment_method.destroy!
 
     if deleted_default
@@ -81,32 +130,23 @@ class Api::V1::PaymentMethodsController < ActionController::API
   def create_params
     params.require(:payment_method).permit(
       :provider,
-      :stripe_payment_method_id,
       :vault_token,
       :last4,
       :card_brand,
       :exp_month,
       :exp_year,
       :cardholder_name,
-      :is_default,
-      :card_number,
-      :card_cvc
+      :is_default
     )
   end
 
   def update_params
     params.require(:payment_method).permit(
-      :provider,
-      :stripe_payment_method_id,
-      :vault_token,
-      :last4,
-      :card_brand,
-      :exp_month,
-      :exp_year,
       :cardholder_name,
       :is_default,
-      :card_number,
-      :card_cvc
+      :billing_email,
+      :billing_zip,
+      metadata: {}
     )
   end
 
@@ -122,9 +162,18 @@ class Api::V1::PaymentMethodsController < ActionController::API
       is_default: payment_method.is_default,
       created_at: payment_method.created_at,
       updated_at: payment_method.updated_at,
-      card_number: payment_method.card_number,
-      card_cvc: payment_method.card_cvc
+      vault_token: payment_method.vault_token,
+      spreedly_redacted_at: payment_method.spreedly_redacted_at,
+      last_updated_via_spreedly_at: payment_method.last_updated_via_spreedly_at
     }
+  end
+
+  def spreedly_payment_method_missing?(error)
+    message = error.message.to_s.downcase
+    return true if message.include?("unable to find the specified payment method")
+    return true if message.include?("payment method not found")
+
+    error.status.to_i == 404
   end
 end
 

@@ -14,6 +14,7 @@ class User < ApplicationRecord
   has_one :attorney_profile, dependent: :destroy
   has_one :client_profile, dependent: :destroy
   has_many :payment_methods, dependent: :destroy
+  has_many :payment_3ds_sessions, dependent: :destroy
   has_one :payment_method, -> { order(is_default: :desc, created_at: :desc) }, class_name: "PaymentMethod"
   has_many :plans, dependent: :destroy
   has_many :agreements, dependent: :destroy
