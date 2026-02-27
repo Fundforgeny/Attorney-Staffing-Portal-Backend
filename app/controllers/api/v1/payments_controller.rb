@@ -49,7 +49,7 @@ class Api::V1::PaymentsController < ActionController::API
       render_error(message: "Plan is already paid", status: :unprocessable_entity) and return if plan.paid?
       render_error(message: "Plan is expired", status: :unprocessable_entity) and return if plan.expired?
 
-      PaymentService.new(user, plan, @checkout_params[:payment_method], @checkout_params[:first_installment_date]).process_checkout
+      PaymentService.new(user, plan, @checkout_params, @checkout_params[:first_installment_date]).process_checkout
       plan.update!(status: :payment_pending) unless plan.paid?
       
       render_success(
@@ -242,7 +242,19 @@ class Api::V1::PaymentsController < ActionController::API
   end
 
   def set_checkout_params
-    @checkout_params = params.permit(:user_id, :plan_id, :first_installment_date, payment_method: [:number, :cvc, :exp_month, :exp_year, :last_four])
+    @checkout_params = params.permit(
+      :user_id,
+      :plan_id,
+      :first_installment_date,
+      :payment_method_id,
+      :vault_token,
+      :card_brand,
+      :last4,
+      :exp_month,
+      :exp_year,
+      :cardholder_name,
+      payment_method: [ :number, :cvc, :exp_month, :exp_year, :last_four, :vault_token, :card_brand, :last4, :payment_method_id ]
+    )
   end
 
   def set_user_params
@@ -317,7 +329,7 @@ class Api::V1::PaymentsController < ActionController::API
     callback_url = "#{request.base_url}/api/v1/payments/3ds/callback?callback_token=#{callback_token}"
     redirect_url = ENV["SPREEDLY_3DS_RETURN_URL"].presence || "#{ENV.fetch('FRONTEND_APP_URL', 'http://localhost:5173').to_s.chomp('/')}/pay/3ds-complete"
 
-    transaction = Spreedly::ThreeDsService.new.initiate_purchase(
+    raw_transaction = Spreedly::ThreeDsService.new.initiate_purchase(
       gateway_token: ENV["GATEWAY_TOKEN"].to_s,
       payment_method_token: payment_method.vault_token,
       amount_cents: (payment.total_payment_including_fee.to_d * 100).to_i,
@@ -325,6 +337,10 @@ class Api::V1::PaymentsController < ActionController::API
       callback_url: callback_url,
       redirect_url: redirect_url
     )
+    transaction = normalize_transaction(raw_transaction)
+    if transaction.blank?
+      return render_error(message: "Invalid 3DS response from Spreedly", status: :unprocessable_entity)
+    end
 
     challenge_url = Spreedly::ThreeDsService.new.extract_challenge_url(transaction)
     session_status = derive_three_ds_session_status(transaction["state"], challenge_url)
@@ -363,7 +379,11 @@ class Api::V1::PaymentsController < ActionController::API
     session = Payment3dsSession.find_by(id: @payment_params[:three_ds_session_id], user_id: @user.id, plan_id: @plan.id)
     return render_error(message: "3DS session not found", status: :not_found) if session.blank?
 
-    transaction = Spreedly::ThreeDsService.new.fetch_transaction(transaction_token: session.spreedly_transaction_token)
+    raw_transaction = Spreedly::ThreeDsService.new.fetch_transaction(transaction_token: session.spreedly_transaction_token)
+    transaction = normalize_transaction(raw_transaction)
+    if transaction.blank?
+      return render_error(message: "Invalid 3DS transaction status response", status: :unprocessable_entity)
+    end
     session_status = derive_three_ds_session_status(transaction["state"], session.challenge_url)
     session.update!(
       raw_response: transaction,
@@ -430,10 +450,11 @@ class Api::V1::PaymentsController < ActionController::API
   end
 
   def apply_three_ds_transaction_result!(payment, plan, transaction)
-    succeeded = ActiveModel::Type::Boolean.new.cast(transaction["succeeded"]) || transaction["state"].to_s == "succeeded"
+    tx = normalize_transaction(transaction)
+    succeeded = ActiveModel::Type::Boolean.new.cast(tx["succeeded"]) || tx["state"].to_s == "succeeded"
 
     payment.update!(
-      charge_id: transaction["token"] || payment.charge_id,
+      charge_id: tx["token"] || payment.charge_id,
       status: succeeded ? :succeeded : :failed,
       paid_at: succeeded ? Time.current : nil
     )
@@ -442,20 +463,27 @@ class Api::V1::PaymentsController < ActionController::API
   end
 
   def render_terminal_three_ds_response!(session, payment, transaction)
-    succeeded = ActiveModel::Type::Boolean.new.cast(transaction["succeeded"]) || transaction["state"].to_s == "succeeded"
+    tx = normalize_transaction(transaction)
+    succeeded = ActiveModel::Type::Boolean.new.cast(tx["succeeded"]) || tx["state"].to_s == "succeeded"
     payload = {
       status: succeeded ? "succeeded" : "failed",
       three_ds_required: true,
       three_ds_session_id: session.id,
-      transaction_token: transaction["token"] || session.spreedly_transaction_token,
-      state: transaction["state"],
+      transaction_token: tx["token"] || session.spreedly_transaction_token,
+      state: tx["state"],
       payment_type: payment.payment_type
     }
 
     if succeeded
       render_success(data: payload, message: "Payment processed successfully", status: :ok)
     else
-      render_error(message: "Payment failed: #{transaction['message'].presence || '3DS authentication failed'}", status: :payment_required)
+      render_error(message: "Payment failed: #{tx['message'].presence || '3DS authentication failed'}", status: :payment_required)
     end
+  end
+
+  def normalize_transaction(transaction)
+    return transaction if transaction.is_a?(Hash)
+
+    {}
   end
 end
