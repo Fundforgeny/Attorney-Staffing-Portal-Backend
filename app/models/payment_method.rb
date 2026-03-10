@@ -1,5 +1,5 @@
 class PaymentMethod < ApplicationRecord
-  MAX_PAYMENT_METHODS_PER_USER = 3
+  MAX_PAYMENT_METHODS_PER_USER = 20
 
   belongs_to :user
   has_many :payments, dependent: :destroy
