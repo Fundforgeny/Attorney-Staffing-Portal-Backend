@@ -87,6 +87,7 @@ ActiveAdmin.register User do
           column :status do |plan|
             status_tag plan.status
           end
+          column("Next Payment Date") { |plan| plan.next_payment_at }
           column :created_at
         end
       else

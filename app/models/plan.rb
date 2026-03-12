@@ -27,6 +27,7 @@ class Plan < ApplicationRecord
       "id",
       "checkout_session_id",
       "name",
+      "next_payment_at",
       "duration",
       "total_payment",
       "total_interest_amount",
@@ -76,5 +77,29 @@ class Plan < ApplicationRecord
 
   def total_payment_plan_amount
     base_legal_fee_amount + administration_fee_amount
+  end
+
+  def calculated_next_payment_at
+    payments
+      .monthly_payment
+      .where(status: [ Payment.statuses[:pending], Payment.statuses[:processing] ])
+      .where.not(scheduled_at: nil)
+      .order(:scheduled_at)
+      .pick(:scheduled_at)
+  end
+
+  def next_scheduled_monthly_payment
+    payments
+      .monthly_payment
+      .where(status: [ Payment.statuses[:pending], Payment.statuses[:processing] ])
+      .where.not(scheduled_at: nil)
+      .order(:scheduled_at)
+      .first
+  end
+
+  def refresh_next_payment_at!
+    return unless persisted?
+
+    update_column(:next_payment_at, calculated_next_payment_at)
   end
 end

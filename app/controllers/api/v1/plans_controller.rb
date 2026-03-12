@@ -1,8 +1,11 @@
 class Api::V1::PlansController < ActionController::API
   include ApiResponse
+  include Devise::Controllers::Helpers
 
   before_action :validate_create_params, only: [ :create ]
   before_action :set_plan, only: [ :show, :generate_agreement, :mark_payment_success, :mark_payment_failed ]
+  before_action :authenticate_user!, only: [ :update_next_payment_at ]
+  before_action :set_current_user_plan, only: [ :update_next_payment_at ]
 
   def create
     retries = 0
@@ -75,10 +78,51 @@ class Api::V1::PlansController < ActionController::API
     render_success(data: serialized_plan(@plan), message: "Plan marked as failed", status: :ok)
   end
 
+  def update_next_payment_at
+    payment = @plan.next_scheduled_monthly_payment
+    current_next_payment_at = payment&.scheduled_at || @plan.next_payment_at
+    return render_error(message: "No upcoming monthly payment found for this plan", status: :unprocessable_entity) if current_next_payment_at.blank?
+
+    next_payment_at = parse_next_payment_at_param
+    return if performed?
+
+    unless same_billing_month?(current_next_payment_at: current_next_payment_at, requested_next_payment_at: next_payment_at)
+      return render_error(
+        message: "Next payment date can only be changed within #{current_next_payment_at.strftime('%B %Y')}",
+        status: :unprocessable_entity
+      )
+    end
+
+    ActiveRecord::Base.transaction do
+      payment&.update!(scheduled_at: next_payment_at)
+
+      if payment.present?
+        @plan.refresh_next_payment_at!
+      else
+        @plan.update!(next_payment_at: next_payment_at)
+      end
+    end
+
+    render_success(
+      data: serialized_plan(@plan.reload),
+      message: "Next payment date updated successfully",
+      status: :ok
+    )
+  rescue ActiveRecord::RecordInvalid => e
+    render_error(errors: e.record.errors.full_messages, status: :unprocessable_entity)
+  end
+
   private
 
   def set_plan
     @plan = Plan.find_by(checkout_session_id: params[:checkout_session_id])
+    return if @plan.present?
+
+    render_error(message: "Plan not found", status: :not_found)
+  end
+
+  def set_current_user_plan
+    @plan = current_user.plans.find_by(id: params[:id])
     return if @plan.present?
 
     render_error(message: "Plan not found", status: :not_found)
@@ -172,6 +216,7 @@ class Api::V1::PlansController < ActionController::API
       total_amount: plan.total_payment.to_d,
       down_payment: plan.down_payment.to_d,
       months: plan.duration,
+      next_payment_at: plan.next_payment_at,
       agreement_id: agreement&.id,
       fund_forge_agreement: serialized_attachment(agreement&.pdf),
       engagement_agreement: serialized_attachment(agreement&.engagement_pdf),
@@ -185,6 +230,32 @@ class Api::V1::PlansController < ActionController::API
         }
       end
     }
+  end
+
+  def parse_next_payment_at_param
+    next_payment_at_value = params[:next_payment_at].to_s
+    if next_payment_at_value.blank?
+      render_error(message: "next_payment_at is required", status: :bad_request)
+      return
+    end
+
+    parsed_value = Time.zone.parse(next_payment_at_value)
+    if parsed_value.blank?
+      render_error(message: "next_payment_at must be a valid date", status: :bad_request)
+      return
+    end
+
+    parsed_value
+  rescue ArgumentError, TypeError
+    render_error(message: "next_payment_at must be a valid date", status: :bad_request)
+    nil
+  end
+
+  def same_billing_month?(current_next_payment_at:, requested_next_payment_at:)
+    return false if requested_next_payment_at.blank? || current_next_payment_at.blank?
+
+    current_next_payment_at.year == requested_next_payment_at.year &&
+      current_next_payment_at.month == requested_next_payment_at.month
   end
 
   def serialized_attachment(attachment)

@@ -54,6 +54,7 @@ ActiveAdmin.register Plan do
     column :total_payment
     column :monthly_payment
     column :status
+    column("Next Payment Date") { |plan| plan.next_payment_at }
     column :created_at
     actions
   end
@@ -84,6 +85,7 @@ ActiveAdmin.register Plan do
               row :status do |record|
                 status_tag record.status
               end
+              row("Next Payment Date") { |record| record.next_payment_at }
               row :created_at
               row :updated_at
             end
@@ -156,6 +158,7 @@ ActiveAdmin.register Plan do
                     "N/A"
                   end
                 end
+                column :scheduled_at
                 column :paid_at
                 column :created_at
               end

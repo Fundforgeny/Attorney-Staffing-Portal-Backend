@@ -10,7 +10,7 @@ class Api::V1::Auth::LoginLinksController < ActionController::API
 
     login_magic_link = LoginLinkService.new(user: user).generate_link
     
-    GhlWebhookService.send_login_magic_link!(user: user, login_magic_link: login_magic_link)
+    # GhlWebhookService.send_login_magic_link!(user: user, login_magic_link: login_magic_link)
     puts "Login magic link: #{login_magic_link}"
     render_success(
       data: { email: user.email },
@@ -59,7 +59,7 @@ class Api::V1::Auth::LoginLinksController < ActionController::API
       payment_method: serialized_payment_method(user.payment_method),
       primary_firm: serialized_firm(user.firm),
       firms: user.firms.map { |firm| serialized_firm(firm) },
-      plans: user.plans.map { |plan| serialized_plan(plan) },
+      plans: customer_visible_plans(user).map { |plan| serialized_plan(plan) },
       agreements: user.agreements.map { |agreement| serialized_agreement(agreement) }
     }
   end
@@ -68,7 +68,7 @@ class Api::V1::Auth::LoginLinksController < ActionController::API
     {
       id: plan.id,
       name: plan.name,
-      status: plan.status,
+      status: customer_facing_plan_status(plan),
       duration: plan.duration,
       total_payment: plan.total_payment,
       down_payment: plan.down_payment,
@@ -77,6 +77,7 @@ class Api::V1::Auth::LoginLinksController < ActionController::API
       monthly_interest_amount: plan.monthly_interest_amount,
       base_legal_fee: plan.base_legal_fee_amount,
       payment_plan_selected: plan.payment_plan_selected?,
+      next_payment_at: plan.next_payment_at,
       administration_fee_name: plan.administration_fee_name,
       administration_fee_percentage: plan.administration_fee_percentage,
       administration_fee_amount: plan.administration_fee_amount,
@@ -86,6 +87,18 @@ class Api::V1::Auth::LoginLinksController < ActionController::API
       payments: plan.payments.map { |payment| serialized_payment(payment) },
       agreement: serialized_agreement(plan.agreement)
     }
+  end
+
+  def customer_visible_plans(user)
+    user.plans.reject(&:draft?)
+  end
+
+  def customer_facing_plan_status(plan)
+    return "active" if plan.paid?
+    return "completed" if plan.expired?
+    return "canceled" if plan.failed?
+
+    "active"
   end
 
   def serialized_payment(payment)

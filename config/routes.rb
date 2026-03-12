@@ -35,6 +35,7 @@ Rails.application.routes.draw do
       post "plans/:checkout_session_id/generate_agreement", to: "plans#generate_agreement"
       post "plans/:checkout_session_id/mark_payment_success", to: "plans#mark_payment_success"
       post "plans/:checkout_session_id/mark_payment_failed", to: "plans#mark_payment_failed"
+      patch "customer/plans/:id/next_payment_at", to: "plans#update_next_payment_at"
       resources :payment_methods, only: [ :index, :show, :create, :update, :destroy ] do
         post :set_default, on: :member
       end
