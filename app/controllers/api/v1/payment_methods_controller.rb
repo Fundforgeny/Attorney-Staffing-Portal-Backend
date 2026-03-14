@@ -19,15 +19,6 @@ class Api::V1::PaymentMethodsController < ActionController::API
       return render_error(message: "vault_token is required", status: :bad_request)
     end
 
-    existing = current_user.payment_methods.find_by(vault_token: create_params[:vault_token])
-    if existing.present?
-      return render_success(
-        data: serialize_payment_method(existing),
-        message: "Payment method already saved",
-        status: :ok
-      )
-    end
-
     payment_method = current_user.payment_methods.new(
       provider: create_params[:provider].presence || "Spreedly Vault",
       vault_token: create_params[:vault_token],

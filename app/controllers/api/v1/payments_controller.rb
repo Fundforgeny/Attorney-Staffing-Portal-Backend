@@ -415,11 +415,14 @@ class Api::V1::PaymentsController < ActionController::API
     end
 
     if @payment_params[:vault_token].present?
-      payment_method = @user.payment_methods.find_or_initialize_by(vault_token: @payment_params[:vault_token])
-      payment_method.provider = "Spreedly Vault" if payment_method.provider.blank?
-      payment_method.card_brand = @payment_params[:card_brand] if @payment_params[:card_brand].present?
-      payment_method.last_updated_via_spreedly_at = Time.current
-      payment_method.save! if payment_method.changed?
+      payment_method = @user.payment_methods.new(
+        vault_token: @payment_params[:vault_token],
+        provider: "Spreedly Vault",
+        card_brand: @payment_params[:card_brand],
+        last_updated_via_spreedly_at: Time.current,
+        is_default: @user.payment_methods.blank?
+      )
+      payment_method.save!
       return payment_method
     end
 

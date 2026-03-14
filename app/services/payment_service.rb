@@ -37,9 +37,6 @@ class PaymentService
   end
 
   def find_or_create_tokenized_payment_method!(vault_token, params)
-    existing = @user.payment_methods.find_by(vault_token: vault_token)
-    return existing if existing.present?
-
     PaymentMethod.create!(
       user: @user,
       provider: "Spreedly Vault",

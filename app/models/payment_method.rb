@@ -6,7 +6,6 @@ class PaymentMethod < ApplicationRecord
   has_many :payment_3ds_sessions, dependent: :destroy
 
   validates :stripe_payment_method_id, uniqueness: true, allow_nil: true
-  validates :vault_token, uniqueness: { scope: :user_id }, allow_nil: true
   validates :provider, presence: true
   validates :last4, length: { is: 4 }, allow_blank: true
   validates :exp_month, inclusion: { in: 1..12 }, allow_nil: true

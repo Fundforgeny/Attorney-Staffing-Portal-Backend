@@ -10,7 +10,7 @@ class Api::V1::Auth::LoginLinksController < ActionController::API
 
     login_magic_link = LoginLinkService.new(user: user).generate_link
     
-    # GhlWebhookService.send_login_magic_link!(user: user, login_magic_link: login_magic_link)
+    GhlWebhookService.send_login_magic_link!(user: user, login_magic_link: login_magic_link)
     puts "Login magic link: #{login_magic_link}"
     render_success(
       data: { email: user.email },
