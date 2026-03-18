@@ -57,7 +57,13 @@ class Api::V1::PlansController < ActionController::API
   end
 
   def mark_payment_success
-    return render_error(message: "Plan is already paid", status: :unprocessable_entity) if @plan.paid?
+    if @plan.paid?
+      return render_success(
+        data: serialized_plan(@plan),
+        message: "Plan is already paid",
+        status: :ok
+      )
+    end
 
     succeeded_payment = @plan.payments.where(status: :succeeded).order(paid_at: :desc).first
     unless succeeded_payment.present?
