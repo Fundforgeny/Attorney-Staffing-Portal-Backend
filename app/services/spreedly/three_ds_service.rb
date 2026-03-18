@@ -19,7 +19,7 @@ module Spreedly
       payload[:transaction][:workflow_key] = workflow_key if workflow_key.present?
 
       response = @client.post(
-        "/transactions/authorize.json",
+        "/transactions/purchase.json",
         body: payload
       )
       response.fetch("transaction")

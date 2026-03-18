@@ -11,7 +11,7 @@ class SpreedlyService
     ActiveRecord::Base.transaction do
       payment_method = update_payment_method
       payment = find_payment
-      transaction = authorize_payment(payment, payment_method.vault_token)
+      transaction = purchase_payment(payment, payment_method.vault_token)
       if transaction_succeeded?(transaction)
         update_payment_status(payment, transaction, :succeeded)
         return {
@@ -61,7 +61,7 @@ class SpreedlyService
 
   private
 
-  def authorize_payment(payment, vault_token)
+  def purchase_payment(payment, vault_token)
     amount_in_cents = (payment.total_payment_including_fee * 100).to_i
 
     payload = {
@@ -75,7 +75,7 @@ class SpreedlyService
     workflow_key = composer_workflow_key
     payload[:transaction][:workflow_key] = workflow_key if workflow_key.present?
   
-    response = @client.post("/transactions/authorize.json", body: payload)
+    response = @client.post("/transactions/purchase.json", body: payload)
     response.fetch("transaction")
   end
 
