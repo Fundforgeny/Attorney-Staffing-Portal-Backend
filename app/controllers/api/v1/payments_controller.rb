@@ -39,6 +39,12 @@ class Api::V1::PaymentsController < ActionController::API
     render_error(message: e.message, status: :unprocessable_entity)
   end
 
+  def iframe_security
+    render_success(data: Spreedly::IframeSecurityService.payload, status: :ok)
+  rescue StandardError => e
+    render_error(message: e.message, status: :unprocessable_entity)
+  end
+
   def checkout
     ActiveRecord::Base.transaction do
       user = User.find(@checkout_params[:user_id])
