@@ -1,30 +1,18 @@
 # app/services/spreedly_service.rb
 class SpreedlyService
-  include HTTParty
-  base_uri 'https://core.spreedly.com/v1'
-  
   def initialize(user, plan, payment_params)
     @user = user
     @plan = plan
     @payment_params = payment_params
-    @environment_key = ENV["SPREEDLY_ENVIRONMENT_KEY"]
-    @access_secret = ENV["SPREEDLY_ACCESS_SECRET"]
-    @options = {
-      basic_auth: { username: @environment_key, password: @access_secret },
-      headers: {
-        "Content-Type" => "application/json"
-      }
-    }
+    @client = Spreedly::Client.new
   end
   
   def process_payment
     ActiveRecord::Base.transaction do
       payment_method = update_payment_method
       payment = find_payment
-      result = make_purchase(payment, payment_method.vault_token)
-
-      transaction = result.dig(:body, "transaction")
-      if result[:success] && transaction_succeeded?(transaction)
+      transaction = authorize_payment(payment, payment_method.vault_token)
+      if transaction_succeeded?(transaction)
         update_payment_status(payment, transaction, :succeeded)
         return {
           success: true,
@@ -38,57 +26,62 @@ class SpreedlyService
         }
       else
         update_payment_status(payment, transaction, :failed)
-        error_message = extract_spreedly_error(result[:body])
+        error_message = extract_spreedly_error(transaction)
         return { success: false, error: "Payment failed: #{error_message}", status: :payment_required }
       end
+    rescue Spreedly::Error => e
+      update_payment_status(payment, e.payload["transaction"], :failed) if payment.present?
+      error_message = extract_spreedly_error(e.payload)
+      return { success: false, error: "Payment failed: #{error_message}", status: :payment_required }
     end
   rescue StandardError => e
     puts "Payment processing error: #{e.class} - #{e.message}"
     puts "#{e.backtrace.join("\n")}"
     { success: false, error: "Payment processing failed: #{e.message}", status: :internal_server_error }
   end
-  
-  def purchase_payment(gateway_token, vault_token, amount, currency = 'USD', options = {})
-    body = {
+
+  def verify_payment_method(vault_token)
+    @client.post(
+      "/verify.json",
+      body: {
+        transaction: {
+          payment_method_token: vault_token
+        }
+      }
+    )
+  end
+
+  def get_payment_method(vault_token)
+    @client.get("/payment_methods/#{vault_token}.json")
+  end
+
+  def retain_payment_method(vault_token)
+    @client.put("/payment_methods/#{vault_token}/retain.json")
+  end
+
+  private
+
+  def authorize_payment(payment, vault_token)
+    amount_in_cents = (payment.total_payment_including_fee * 100).to_i
+
+    payload = {
       transaction: {
         payment_method_token: vault_token,
-        amount: amount,
-        currency_code: currency,
-        retain_on_success: options[:retain_on_success] || false
+        amount: amount_in_cents,
+        currency_code: "USD",
+        retain_on_success: payment.payment_type == "down_payment"
       }
     }
-    endpoint = "/gateways/#{gateway_token}/purchase.json"
-    
-    response = self.class.post(endpoint, @options.merge(body: body.to_json))
-    parse_response(response)
+    workflow_key = composer_workflow_key
+    payload[:transaction][:workflow_key] = workflow_key if workflow_key.present?
+  
+    response = @client.post("/transactions/authorize.json", body: payload)
+    response.fetch("transaction")
   end
-  
-  def verify_payment_method(vault_token)
-    body = {
-      transaction: {
-        payment_method_token: vault_token
-      }
-    }
-    
-    response = self.class.post('/verify.json', @options.merge(body: body.to_json))
-    parse_response(response)
-  end
-  
-  def get_payment_method(vault_token)
-    response = self.class.get("/payment_methods/#{vault_token}.json", @options)
-    parse_response(response)
-  end
-  
-  def retain_payment_method(vault_token)
-    response = self.class.put("/payment_methods/#{vault_token}/retain.json", @options)
-    parse_response(response)
-  end
-  
-  private
-  
+
   def update_payment_method
     payment_method = @user.payment_method || @user.build_payment_method
-    
+
     payment_method.update!(
       provider: "Spreedly Vault",
       vault_token: @payment_params[:vault_token],
@@ -108,15 +101,6 @@ class SpreedlyService
     payment
   end
   
-  def make_purchase(payment, vault_token)
-    amount_in_cents = (payment.total_payment_including_fee * 100).to_i
-    
-    purchase_options = {
-      retain_on_success: payment.payment_type == "down_payment"
-    }
-    purchase_payment(ENV["GATEWAY_TOKEN"], vault_token, amount_in_cents, 'USD', purchase_options)
-  end
-  
   def update_payment_status(payment, transaction_data, status)
     payment.update!(
       charge_id: transaction_data&.dig("token") || payment.charge_id,
@@ -131,6 +115,10 @@ class SpreedlyService
     ActiveModel::Type::Boolean.new.cast(transaction_data["succeeded"]) || transaction_data["state"].to_s == "succeeded"
   end
   
+  def composer_workflow_key
+    ENV["SPREEDLY_WORKFLOW_KEY"].presence || ENV["SPREEDLY_COMPOSER_WORKFLOW_KEY"].presence
+  end
+
   def extract_spreedly_error(response_body)
     if response_body.is_a?(Hash) && response_body["transaction"]
       error_message = response_body["transaction"]["message"]
@@ -143,15 +131,6 @@ class SpreedlyService
         return errors.first["message"] || errors.first["key"]
       end
     end
-    
     "Payment processing failed"
-  end
-  
-  def parse_response(response)
-    {
-      success: response.code.to_i.between?(200, 299),
-      status: response.code.to_i,
-      body: (JSON.parse(response.body) rescue response.body)
-    }
   end
 end

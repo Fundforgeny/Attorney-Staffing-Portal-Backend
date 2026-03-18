@@ -4,20 +4,23 @@ module Spreedly
       @client = client
     end
 
-    def initiate_purchase(gateway_token:, payment_method_token:, amount_cents:, currency: "USD", callback_url:, redirect_url:)
-      response = @client.post(
-        "/gateways/#{gateway_token}/purchase.json",
-        body: {
-          transaction: {
-            payment_method_token: payment_method_token,
-            amount: amount_cents,
-            currency_code: currency,
-            retain_on_success: true,
-            attempt_3dsecure: true,
-            callback_url: callback_url,
-            redirect_url: redirect_url
-          }
+    def initiate_purchase(payment_method_token:, amount_cents:, currency: "USD", callback_url:, redirect_url:, workflow_key: nil)
+      payload = {
+        transaction: {
+          payment_method_token: payment_method_token,
+          amount: amount_cents,
+          currency_code: currency,
+          retain_on_success: true,
+          attempt_3dsecure: true,
+          callback_url: callback_url,
+          redirect_url: redirect_url
         }
+      }
+      payload[:transaction][:workflow_key] = workflow_key if workflow_key.present?
+
+      response = @client.post(
+        "/transactions/authorize.json",
+        body: payload
       )
       response.fetch("transaction")
     end

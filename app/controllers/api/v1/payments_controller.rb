@@ -330,12 +330,12 @@ class Api::V1::PaymentsController < ActionController::API
     redirect_url = ENV["SPREEDLY_3DS_RETURN_URL"].presence || "#{ENV.fetch('FRONTEND_APP_URL', 'http://localhost:5173').to_s.chomp('/')}/pay/3ds-complete"
 
     raw_transaction = Spreedly::ThreeDsService.new.initiate_purchase(
-      gateway_token: ENV["GATEWAY_TOKEN"].to_s,
       payment_method_token: payment_method.vault_token,
       amount_cents: (payment.total_payment_including_fee.to_d * 100).to_i,
       currency: "USD",
       callback_url: callback_url,
-      redirect_url: redirect_url
+      redirect_url: redirect_url,
+      workflow_key: composer_workflow_key
     )
     transaction = normalize_transaction(raw_transaction)
     if transaction.blank?
@@ -488,5 +488,9 @@ class Api::V1::PaymentsController < ActionController::API
     return transaction if transaction.is_a?(Hash)
 
     {}
+  end
+
+  def composer_workflow_key
+    ENV["SPREEDLY_WORKFLOW_KEY"].presence || ENV["SPREEDLY_COMPOSER_WORKFLOW_KEY"].presence
   end
 end
