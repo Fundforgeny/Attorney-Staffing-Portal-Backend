@@ -151,7 +151,9 @@ class Api::V1::Payment3dsController < ActionController::API
         data: {
           transaction_token: raw_transaction["token"],
           three_ds_required: true,
-          session_id: session.id
+          session_id: session.id,
+          challenge_url: challenge_url,
+          status: session_status
         },
         message: "3DS verification required",
         status: :ok
