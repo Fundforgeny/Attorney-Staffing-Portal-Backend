@@ -42,10 +42,12 @@ module Spreedly
       response.fetch("transaction")
     end
 
+    # Never use top-level transaction["redirect_url"] — that is the merchant return URL we sent
+    # (Spreedly echoes it). Using it as "challenge_url" breaks Lifecycle / iframe flows.
     def extract_challenge_url(transaction)
       transaction["checkout_url"].presence ||
-        transaction["redirect_url"].presence ||
-        transaction.dig("three_ds_context", "redirect_url").presence
+        transaction.dig("three_ds_context", "redirect_url").presence ||
+        transaction.dig("sca_authentication", "challenge_form_embed_url").presence
     end
 
     def terminal_state?(state)
