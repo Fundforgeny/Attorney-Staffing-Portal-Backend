@@ -1,6 +1,7 @@
 # app/controllers/api/v1/payments_controller.rb
 class Api::V1::PaymentsController < ActionController::API
   include ApiResponse
+  include SpreedlyCallbackUrl
 
   before_action :set_user_params, only: [:create_user_plan]
   before_action :set_checkout_params, only: [:checkout]
@@ -243,7 +244,8 @@ class Api::V1::PaymentsController < ActionController::API
       :card_brand,
       :payment_method_id,
       :three_ds_session_id,
-      :require_3ds
+      :require_3ds,
+      :browser_info
     )
   end
 
@@ -327,13 +329,17 @@ class Api::V1::PaymentsController < ActionController::API
   end
 
   def start_three_ds_payment!
+    if sca_provider_key.present? && @payment_params[:browser_info].blank?
+      return render_error(message: "browser_info is required for 3DS2 authentication", status: :unprocessable_entity)
+    end
+
     payment_method = resolve_payment_method_for_three_ds!
     payment = resolve_payment_for_three_ds!
     payment.update!(payment_method: payment_method) if payment.payment_method_id != payment_method.id
 
     callback_token = SecureRandom.hex(24)
-    callback_url = "#{request.base_url}/api/v1/payments/3ds/callback?callback_token=#{callback_token}"
-    redirect_url = ENV["SPREEDLY_3DS_RETURN_URL"].presence || "#{ENV.fetch('FRONTEND_APP_URL', 'http://localhost:5173').to_s.chomp('/')}/pay/3ds-complete"
+    callback_url = spreedly_three_ds_callback_url(callback_token)
+    redirect_url = spreedly_three_ds_redirect_url
 
     raw_transaction = Spreedly::ThreeDsService.new.initiate_purchase(
       payment_method_token: payment_method.vault_token,
@@ -341,7 +347,10 @@ class Api::V1::PaymentsController < ActionController::API
       currency: "USD",
       callback_url: callback_url,
       redirect_url: redirect_url,
-      workflow_key: composer_workflow_key
+      workflow_key: composer_workflow_key,
+      browser_info: @payment_params[:browser_info],
+      sca_provider_key: sca_provider_key,
+      ip: request.remote_ip
     )
     transaction = normalize_transaction(raw_transaction)
     if transaction.blank?
@@ -498,5 +507,9 @@ class Api::V1::PaymentsController < ActionController::API
 
   def composer_workflow_key
     ENV["SPREEDLY_WORKFLOW_KEY"].presence || ENV["SPREEDLY_COMPOSER_WORKFLOW_KEY"].presence
+  end
+
+  def sca_provider_key
+    ENV["SPREEDLY_SCA_PROVIDER_KEY"].presence
   end
 end

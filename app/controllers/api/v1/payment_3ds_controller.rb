@@ -1,18 +1,23 @@
 class Api::V1::Payment3dsController < ActionController::API
   include ApiResponse
   include Devise::Controllers::Helpers
+  include SpreedlyCallbackUrl
 
-  before_action :authenticate_user!, except: [ :callback ]
+  before_action :authenticate_user!, except: [ :callback, :start_checkout, :complete_checkout ]
 
   def start
+    if sca_provider_key.present? && start_params[:browser_info].blank?
+      return render_error(message: "browser_info is required for 3DS2 authentication", status: :unprocessable_entity)
+    end
+
     user = current_user
     plan = user.plans.find(start_params[:plan_id])
     payment_method = user.payment_methods.find(start_params[:payment_method_id])
     payment = resolve_payment!(user, plan)
 
     callback_token = SecureRandom.hex(24)
-    callback_url = "#{request.base_url}/api/v1/payments/3ds/callback?callback_token=#{callback_token}"
-    redirect_url = ENV["SPREEDLY_3DS_RETURN_URL"].presence || "#{ENV.fetch('FRONTEND_APP_URL', 'http://localhost:5173').to_s.chomp('/')}/pay/3ds-complete"
+    callback_url = spreedly_three_ds_callback_url(callback_token)
+    redirect_url = spreedly_three_ds_redirect_url
 
     transaction = Spreedly::ThreeDsService.new.initiate_purchase(
       payment_method_token: payment_method.vault_token,
@@ -20,7 +25,10 @@ class Api::V1::Payment3dsController < ActionController::API
       currency: "USD",
       callback_url: callback_url,
       redirect_url: redirect_url,
-      workflow_key: composer_workflow_key
+      workflow_key: composer_workflow_key,
+      browser_info: start_params[:browser_info],
+      sca_provider_key: sca_provider_key,
+      ip: request.remote_ip
     )
 
     challenge_url = Spreedly::ThreeDsService.new.extract_challenge_url(transaction)
@@ -77,6 +85,129 @@ class Api::V1::Payment3dsController < ActionController::API
     render_error(message: e.message, status: :unprocessable_entity)
   end
 
+  def start_checkout
+    if sca_provider_key.present? && start_checkout_params[:browser_info].blank?
+      return render_error(message: "browser_info is required for 3DS2 authentication", status: :unprocessable_entity)
+    end
+
+    plan = find_plan_for_checkout!
+    user = User.find(start_checkout_params[:user_id])
+    raise ActiveRecord::RecordNotFound, "User not found" unless plan.user_id == user.id
+
+    return render_error(message: "Plan is already paid", status: :unprocessable_entity) if plan.paid?
+    return render_error(message: "Plan is expired", status: :unprocessable_entity) if plan.expired?
+
+    payment_method = resolve_payment_method_for_checkout!(user)
+    payment = ensure_checkout_and_payment!(user, plan, payment_method)
+
+    callback_token = SecureRandom.hex(24)
+    callback_url = spreedly_three_ds_callback_url(callback_token)
+    redirect_url = spreedly_three_ds_redirect_url
+
+    amount_cents = start_checkout_params[:amount_in_cents].presence || (payment.total_payment_including_fee.to_d * 100).to_i
+
+    raw_transaction = Spreedly::ThreeDsService.new.initiate_purchase(
+      payment_method_token: payment_method.vault_token,
+      amount_cents: amount_cents,
+      currency: "USD",
+      callback_url: callback_url,
+      redirect_url: redirect_url,
+      workflow_key: composer_workflow_key,
+      browser_info: start_checkout_params[:browser_info],
+      sca_provider_key: sca_provider_key,
+      ip: request.remote_ip
+    )
+
+    challenge_url = Spreedly::ThreeDsService.new.extract_challenge_url(raw_transaction)
+    session_status = derive_session_status(raw_transaction["state"], challenge_url)
+    session = Payment3dsSession.create!(
+      user: user,
+      plan: plan,
+      payment: payment,
+      payment_method: payment_method,
+      status: session_status,
+      callback_token: callback_token,
+      spreedly_transaction_token: raw_transaction["token"],
+      challenge_url: challenge_url,
+      raw_response: raw_transaction
+    )
+
+    if terminal_transaction?(raw_transaction["state"])
+      update_payment_from_transaction!(payment, plan, raw_transaction)
+      if raw_transaction["state"].to_s == "succeeded"
+        render_success(
+          data: { checkout_completed: true, three_ds_required: false },
+          message: "Payment completed successfully",
+          status: :ok
+        )
+      else
+        render_error(
+          message: raw_transaction["message"].presence || "3DS authentication failed",
+          status: :unprocessable_entity
+        )
+      end
+    else
+      render_success(
+        data: {
+          transaction_token: raw_transaction["token"],
+          three_ds_required: true,
+          session_id: session.id
+        },
+        message: "3DS verification required",
+        status: :ok
+      )
+    end
+  rescue ActiveRecord::RecordNotFound => e
+    render_error(message: e.message.presence || "Plan or user not found", status: :not_found)
+  rescue Spreedly::Error => e
+    render_error(message: e.message, status: :unprocessable_entity)
+  rescue ArgumentError => e
+    render_error(message: e.message, status: :unprocessable_entity)
+  end
+
+  def complete_checkout
+    session = Payment3dsSession.find_by(id: complete_checkout_params[:session_id])
+    return render_error(message: "3DS session not found", status: :not_found) if session.blank?
+
+    if complete_checkout_params[:transaction_token].present? && session.spreedly_transaction_token != complete_checkout_params[:transaction_token]
+      return render_error(message: "Transaction token mismatch", status: :unprocessable_entity)
+    end
+
+    transaction = Spreedly::ThreeDsService.new.fetch_transaction(transaction_token: session.spreedly_transaction_token)
+    session.update!(raw_response: transaction, status: derive_session_status(transaction["state"], session.challenge_url))
+
+    unless terminal_transaction?(transaction["state"])
+      return render_success(
+        data: {
+          status: session.status,
+          three_ds_required: true,
+          session_id: session.id,
+          transaction_token: session.spreedly_transaction_token
+        },
+        message: "3DS verification still in progress",
+        status: :ok
+      )
+    end
+
+    update_payment_from_transaction!(session.payment, session.plan, transaction)
+    succeeded = transaction["state"].to_s == "succeeded"
+
+    if succeeded
+      render_success(
+        data: { checkout_completed: true, three_ds_required: false },
+        message: "Payment completed successfully",
+        status: :ok
+      )
+    else
+      render_error(
+        message: transaction["message"].presence || "3DS authentication failed",
+        status: :unprocessable_entity
+      )
+    end
+  rescue Spreedly::Error => e
+    render_error(message: e.message, status: :unprocessable_entity)
+  end
+
   def callback
     session = Payment3dsSession.find_by(callback_token: params[:callback_token])
     return render_error(message: "Invalid callback token", status: :not_found) if session.blank?
@@ -99,11 +230,74 @@ class Api::V1::Payment3dsController < ActionController::API
   private
 
   def start_params
-    params.permit(:plan_id, :payment_method_id)
+    params.permit(:plan_id, :payment_method_id, :browser_info)
   end
 
   def complete_params
     params.permit(:session_id)
+  end
+
+  def start_checkout_params
+    params.permit(:checkout_session_id, :user_id, :plan_id, :vault_token, :card_brand, :browser_info, :amount_in_cents, :first_installment_date)
+  end
+
+  def complete_checkout_params
+    params.permit(:checkout_session_id, :transaction_token, :session_id)
+  end
+
+  def find_plan_for_checkout!
+    if start_checkout_params[:checkout_session_id].present?
+      Plan.find_by!(checkout_session_id: start_checkout_params[:checkout_session_id])
+    elsif start_checkout_params[:plan_id].present?
+      Plan.find(start_checkout_params[:plan_id])
+    else
+      raise ArgumentError, "Missing checkout_session_id or plan_id"
+    end
+  end
+
+  def resolve_payment_method_for_checkout!(user)
+    vault_token = start_checkout_params[:vault_token]
+    raise ArgumentError, "Missing vault_token" if vault_token.blank?
+
+    existing = user.payment_methods.find_by(vault_token: vault_token)
+    return existing if existing.present?
+
+    PaymentMethod.create!(
+      user: user,
+      provider: "Spreedly Vault",
+      vault_token: vault_token,
+      card_brand: start_checkout_params[:card_brand],
+      cardholder_name: "#{user.first_name} #{user.last_name}".strip.presence || "Cardholder",
+      is_default: user.payment_methods.blank?,
+      last_updated_via_spreedly_at: Time.current
+    )
+  end
+
+  def ensure_checkout_and_payment!(user, plan, payment_method)
+    payment_type = plan.duration.to_i > 0 ? "down_payment" : "full_payment"
+    payment = Payment.find_by(user: user, plan: plan, payment_type: payment_type)
+
+    if payment.blank? || payment.total_payment_including_fee.blank?
+      checkout_params = {
+        user_id: user.id,
+        plan_id: plan.id,
+        vault_token: payment_method.vault_token,
+        card_brand: payment_method.card_brand,
+        first_installment_date: start_checkout_params[:first_installment_date]
+      }
+      PaymentService.new(user, plan, checkout_params, start_checkout_params[:first_installment_date]).process_checkout
+      plan.update!(status: :payment_pending) unless plan.paid?
+      plan.reload
+      payment = Payment.find_by!(user: user, plan: plan, payment_type: payment_type)
+    else
+      payment.update!(payment_method: payment_method) if payment.payment_method_id != payment_method.id
+    end
+
+    payment
+  end
+
+  def sca_provider_key
+    ENV["SPREEDLY_SCA_PROVIDER_KEY"].presence
   end
 
   def resolve_payment!(user, plan)

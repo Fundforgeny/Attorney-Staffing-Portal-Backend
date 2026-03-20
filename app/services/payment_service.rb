@@ -116,8 +116,11 @@ class PaymentService
 
   def parse_installment_date
     return Time.current unless @first_installment_date.present?
-    
-    Time.zone.strptime(@first_installment_date, "%m-%d-%Y")
+
+    date_str = @first_installment_date.to_s.strip
+    Time.zone.strptime(date_str, "%Y-%m-%d")
+  rescue ArgumentError
+    Time.zone.strptime(date_str, "%m-%d-%Y")
   rescue ArgumentError
     Time.current
   end

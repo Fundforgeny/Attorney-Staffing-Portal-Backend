@@ -51,6 +51,8 @@ Rails.application.routes.draw do
       post 'payments/process_payment', to: 'payments#process_payment'
       post "payments/3ds/start", to: "payment_3ds#start"
       post "payments/3ds/complete", to: "payment_3ds#complete"
+      post "payments/3ds/start_checkout", to: "payment_3ds#start_checkout"
+      post "payments/3ds/complete_checkout", to: "payment_3ds#complete_checkout"
       post "payments/3ds/callback", to: "payment_3ds#callback"
       # post 'payments/create_payment_session', to: 'payments#create_payment_session'
       # post 'payments/create_verification_session', to: 'payments#create_verification_session'
