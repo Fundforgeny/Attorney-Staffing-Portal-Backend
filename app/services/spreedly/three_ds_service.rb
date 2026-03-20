@@ -47,7 +47,39 @@ module Spreedly
     def extract_challenge_url(transaction)
       transaction["checkout_url"].presence ||
         transaction.dig("three_ds_context", "redirect_url").presence ||
-        transaction.dig("sca_authentication", "challenge_form_embed_url").presence
+        transaction.dig("sca_authentication", "challenge_form_embed_url").presence ||
+        acs_action_from_sca_challenge_form(transaction)
+    end
+
+    # Spreedly often returns challenge as HTML (device_fingerprint / challenge) with no embed URL.
+    def acs_action_from_sca_challenge_form(transaction)
+      html = transaction.dig("sca_authentication", "challenge_form")
+      return nil if html.blank?
+
+      html.to_s.match(/\baction\s*=\s*["']([^"']+)["']/i)&.[](1)
+    end
+
+    # Fields for browser 3DS2 Global (Lifecycle, iframe, or form POST).
+    def challenge_client_fields(transaction)
+      sca = transaction["sca_authentication"]
+      sca = sca.is_a?(Hash) ? sca : {}
+      optional = {
+        sca_required_action: sca["required_action"],
+        challenge_form_html: sca["challenge_form"],
+        sca_authentication_token: sca["token"]
+      }.compact
+
+      { challenge_url: extract_challenge_url(transaction) }.merge(optional)
+    end
+
+    def pending_sca_browser_step?(transaction)
+      return false unless transaction.is_a?(Hash)
+      return false unless transaction["state"].to_s == "pending"
+
+      sca = transaction["sca_authentication"]
+      return false unless sca.is_a?(Hash)
+
+      sca["challenge_form"].present? || sca["required_action"].present?
     end
 
     def terminal_state?(state)

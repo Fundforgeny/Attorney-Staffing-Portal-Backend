@@ -341,7 +341,8 @@ class Api::V1::PaymentsController < ActionController::API
     callback_url = spreedly_three_ds_callback_url(callback_token)
     redirect_url = spreedly_three_ds_redirect_url
 
-    raw_transaction = Spreedly::ThreeDsService.new.initiate_purchase(
+    tds = Spreedly::ThreeDsService.new
+    raw_transaction = tds.initiate_purchase(
       payment_method_token: payment_method.vault_token,
       amount_cents: (payment.total_payment_including_fee.to_d * 100).to_i,
       currency: "USD",
@@ -357,8 +358,8 @@ class Api::V1::PaymentsController < ActionController::API
       return render_error(message: "Invalid 3DS response from Spreedly", status: :unprocessable_entity)
     end
 
-    challenge_url = Spreedly::ThreeDsService.new.extract_challenge_url(transaction)
-    session_status = derive_three_ds_session_status(transaction["state"], challenge_url)
+    challenge_url = tds.extract_challenge_url(transaction)
+    session_status = derive_three_ds_session_status(transaction["state"], challenge_url, transaction)
     session = Payment3dsSession.create!(
       user: @user,
       plan: @plan,
@@ -381,10 +382,9 @@ class Api::V1::PaymentsController < ActionController::API
         status: "action_required",
         three_ds_required: true,
         three_ds_session_id: session.id,
-        challenge_url: challenge_url,
         transaction_token: transaction["token"],
         expires_at: 15.minutes.from_now.iso8601
-      },
+      }.merge(tds.challenge_client_fields(transaction)),
       message: "3DS verification required",
       status: :ok
     )
@@ -394,15 +394,18 @@ class Api::V1::PaymentsController < ActionController::API
     session = Payment3dsSession.find_by(id: @payment_params[:three_ds_session_id], user_id: @user.id, plan_id: @plan.id)
     return render_error(message: "3DS session not found", status: :not_found) if session.blank?
 
-    raw_transaction = Spreedly::ThreeDsService.new.fetch_transaction(transaction_token: session.spreedly_transaction_token)
+    tds = Spreedly::ThreeDsService.new
+    raw_transaction = tds.fetch_transaction(transaction_token: session.spreedly_transaction_token)
     transaction = normalize_transaction(raw_transaction)
     if transaction.blank?
       return render_error(message: "Invalid 3DS transaction status response", status: :unprocessable_entity)
     end
-    session_status = derive_three_ds_session_status(transaction["state"], session.challenge_url)
+    challenge_url = tds.extract_challenge_url(transaction)
+    session_status = derive_three_ds_session_status(transaction["state"], challenge_url, transaction)
     session.update!(
       raw_response: transaction,
       status: session_status,
+      challenge_url: challenge_url,
       completed_at: three_ds_terminal_state?(transaction["state"]) ? Time.current : nil
     )
 
@@ -412,9 +415,8 @@ class Api::V1::PaymentsController < ActionController::API
           status: session.status,
           three_ds_required: true,
           three_ds_session_id: session.id,
-          challenge_url: session.challenge_url,
           transaction_token: session.spreedly_transaction_token
-        },
+        }.merge(tds.challenge_client_fields(transaction)),
         message: "3DS verification still in progress",
         status: :ok
       )
@@ -455,10 +457,11 @@ class Api::V1::PaymentsController < ActionController::API
     payment
   end
 
-  def derive_three_ds_session_status(state, challenge_url)
+  def derive_three_ds_session_status(state, challenge_url, transaction = nil)
     return "succeeded" if state.to_s == "succeeded"
     return "failed" if %w[failed gateway_processing_failed scrubbed].include?(state.to_s)
     return "challenged" if challenge_url.present?
+    return "challenged" if transaction.is_a?(Hash) && Spreedly::ThreeDsService.new.pending_sca_browser_step?(transaction)
 
     "pending"
   end

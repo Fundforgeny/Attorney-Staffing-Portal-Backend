@@ -19,7 +19,8 @@ class Api::V1::Payment3dsController < ActionController::API
     callback_url = spreedly_three_ds_callback_url(callback_token)
     redirect_url = spreedly_three_ds_redirect_url
 
-    transaction = Spreedly::ThreeDsService.new.initiate_purchase(
+    tds = Spreedly::ThreeDsService.new
+    transaction = tds.initiate_purchase(
       payment_method_token: payment_method.vault_token,
       amount_cents: (payment.total_payment_including_fee.to_d * 100).to_i,
       currency: "USD",
@@ -31,8 +32,8 @@ class Api::V1::Payment3dsController < ActionController::API
       ip: request.remote_ip
     )
 
-    challenge_url = Spreedly::ThreeDsService.new.extract_challenge_url(transaction)
-    status = derive_session_status(transaction["state"], challenge_url)
+    challenge_url = tds.extract_challenge_url(transaction)
+    status = derive_session_status(transaction["state"], challenge_url, transaction)
     session = Payment3dsSession.create!(
       user: user,
       plan: plan,
@@ -51,9 +52,8 @@ class Api::V1::Payment3dsController < ActionController::API
       data: {
         session_id: session.id,
         transaction_token: transaction["token"],
-        status: session.status,
-        challenge_url: challenge_url
-      },
+        status: session.status
+      }.merge(tds.challenge_client_fields(transaction)),
       message: status == "succeeded" ? "3DS flow already completed" : "3DS flow initiated",
       status: :ok
     )
@@ -65,8 +65,14 @@ class Api::V1::Payment3dsController < ActionController::API
 
   def complete
     session = current_user.payment_3ds_sessions.find(complete_params[:session_id])
-    transaction = Spreedly::ThreeDsService.new.fetch_transaction(transaction_token: session.spreedly_transaction_token)
-    session.update!(raw_response: transaction, status: derive_session_status(transaction["state"], session.challenge_url))
+    tds = Spreedly::ThreeDsService.new
+    transaction = tds.fetch_transaction(transaction_token: session.spreedly_transaction_token)
+    challenge_url = tds.extract_challenge_url(transaction)
+    session.update!(
+      raw_response: transaction,
+      status: derive_session_status(transaction["state"], challenge_url, transaction),
+      challenge_url: challenge_url
+    )
 
     update_payment_from_transaction!(session.payment, session.plan, transaction) if terminal_transaction?(transaction["state"])
 
@@ -75,7 +81,7 @@ class Api::V1::Payment3dsController < ActionController::API
         session_id: session.id,
         transaction_token: session.spreedly_transaction_token,
         status: session.status
-      },
+      }.merge(tds.challenge_client_fields(transaction)),
       message: "3DS transaction status fetched",
       status: :ok
     )
@@ -106,7 +112,8 @@ class Api::V1::Payment3dsController < ActionController::API
 
     amount_cents = start_checkout_params[:amount_in_cents].presence || (payment.total_payment_including_fee.to_d * 100).to_i
 
-    raw_transaction = Spreedly::ThreeDsService.new.initiate_purchase(
+    tds = Spreedly::ThreeDsService.new
+    raw_transaction = tds.initiate_purchase(
       payment_method_token: payment_method.vault_token,
       amount_cents: amount_cents,
       currency: "USD",
@@ -118,8 +125,8 @@ class Api::V1::Payment3dsController < ActionController::API
       ip: request.remote_ip
     )
 
-    challenge_url = Spreedly::ThreeDsService.new.extract_challenge_url(raw_transaction)
-    session_status = derive_session_status(raw_transaction["state"], challenge_url)
+    challenge_url = tds.extract_challenge_url(raw_transaction)
+    session_status = derive_session_status(raw_transaction["state"], challenge_url, raw_transaction)
     session = Payment3dsSession.create!(
       user: user,
       plan: plan,
@@ -152,9 +159,8 @@ class Api::V1::Payment3dsController < ActionController::API
           transaction_token: raw_transaction["token"],
           three_ds_required: true,
           session_id: session.id,
-          challenge_url: challenge_url,
           status: session_status
-        },
+        }.merge(tds.challenge_client_fields(raw_transaction)),
         message: "3DS verification required",
         status: :ok
       )
@@ -175,8 +181,14 @@ class Api::V1::Payment3dsController < ActionController::API
       return render_error(message: "Transaction token mismatch", status: :unprocessable_entity)
     end
 
-    transaction = Spreedly::ThreeDsService.new.fetch_transaction(transaction_token: session.spreedly_transaction_token)
-    session.update!(raw_response: transaction, status: derive_session_status(transaction["state"], session.challenge_url))
+    tds = Spreedly::ThreeDsService.new
+    transaction = tds.fetch_transaction(transaction_token: session.spreedly_transaction_token)
+    challenge_url = tds.extract_challenge_url(transaction)
+    session.update!(
+      raw_response: transaction,
+      status: derive_session_status(transaction["state"], challenge_url, transaction),
+      challenge_url: challenge_url
+    )
 
     unless terminal_transaction?(transaction["state"])
       return render_success(
@@ -185,7 +197,7 @@ class Api::V1::Payment3dsController < ActionController::API
           three_ds_required: true,
           session_id: session.id,
           transaction_token: session.spreedly_transaction_token
-        },
+        }.merge(tds.challenge_client_fields(transaction)),
         message: "3DS verification still in progress",
         status: :ok
       )
@@ -217,9 +229,12 @@ class Api::V1::Payment3dsController < ActionController::API
     transaction = params[:transaction].is_a?(ActionController::Parameters) ? params[:transaction].to_unsafe_h : params[:transaction]
     transaction ||= {}
 
+    tds = Spreedly::ThreeDsService.new
+    challenge_url = tds.extract_challenge_url(transaction)
     session.update!(
       raw_response: transaction,
-      status: derive_session_status(transaction["state"], session.challenge_url),
+      status: derive_session_status(transaction["state"], challenge_url, transaction),
+      challenge_url: challenge_url,
       completed_at: terminal_transaction?(transaction["state"]) ? Time.current : nil
     )
     update_payment_from_transaction!(session.payment, session.plan, transaction) if terminal_transaction?(transaction["state"])
@@ -307,10 +322,11 @@ class Api::V1::Payment3dsController < ActionController::API
     Payment.find_by!(user: user, plan: plan, payment_type: payment_type)
   end
 
-  def derive_session_status(state, challenge_url)
+  def derive_session_status(state, challenge_url, transaction = nil)
     return "succeeded" if state.to_s == "succeeded"
     return "failed" if %w[failed gateway_processing_failed scrubbed].include?(state.to_s)
     return "challenged" if challenge_url.present?
+    return "challenged" if transaction.is_a?(Hash) && Spreedly::ThreeDsService.new.pending_sca_browser_step?(transaction)
 
     "pending"
   end
