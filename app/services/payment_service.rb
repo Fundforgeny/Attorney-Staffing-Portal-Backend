@@ -1,5 +1,6 @@
 # app/services/payment_service.rb
 class PaymentService
+  include PaymentMethodContactFields
   def initialize(user, plan, payment_params, first_installment_date = nil)
     @user = user
     @plan = plan
@@ -37,17 +38,20 @@ class PaymentService
   end
 
   def find_or_create_tokenized_payment_method!(vault_token, params)
-    PaymentMethod.create!(
-      user: @user,
-      provider: "Spreedly Vault",
-      vault_token: vault_token,
-      card_brand: params[:card_brand].presence || params.dig(:payment_method, :card_brand),
-      cardholder_name: params[:cardholder_name].presence || "#{@user.first_name} #{@user.last_name}".strip,
-      last4: params[:last4].presence || params.dig(:payment_method, :last4),
-      exp_month: params[:exp_month].presence || params.dig(:payment_method, :exp_month),
-      exp_year: params[:exp_year].presence || params.dig(:payment_method, :exp_year),
-      is_default: @user.payment_methods.blank?
+    payment_method = @user.payment_methods.find_or_initialize_by(vault_token: vault_token)
+    payment_method.assign_attributes(
+      {
+        provider: "Spreedly Vault",
+        vault_token: vault_token,
+        card_brand: params[:card_brand].presence || params.dig(:payment_method, :card_brand),
+        last4: params[:last4].presence || params.dig(:payment_method, :last4),
+        exp_month: params[:exp_month].presence || params.dig(:payment_method, :exp_month),
+        exp_year: params[:exp_year].presence || params.dig(:payment_method, :exp_year),
+        is_default: payment_method.new_record? ? @user.payment_methods.blank? : payment_method.is_default
+      }.merge(extract_payment_method_contact_attrs(params, user: @user))
     )
+    payment_method.save!
+    payment_method
   end
 
   # Legacy fallback for older clients that still post raw card fields.

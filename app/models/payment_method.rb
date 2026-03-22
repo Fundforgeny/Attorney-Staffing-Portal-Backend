@@ -15,7 +15,7 @@ class PaymentMethod < ApplicationRecord
   scope :ordered_for_user, -> { order(is_default: :desc, created_at: :desc) }
 
   def self.ransackable_attributes(auth_object = nil)
-    ["card_brand", "cardholder_name", "created_at", "exp_month", "exp_year", "id", "id_value", "is_default", "last4", "last_updated_via_spreedly_at", "provider", "spreedly_redacted_at", "stripe_payment_method_id", "updated_at", "user_id", "vault_token"]
+    ["billing_address1", "billing_address2", "billing_city", "billing_country", "billing_email", "billing_phone", "billing_state", "billing_zip", "card_brand", "cardholder_name", "created_at", "exp_month", "exp_year", "id", "id_value", "is_default", "last4", "last_updated_via_spreedly_at", "provider", "spreedly_redacted_at", "stripe_payment_method_id", "updated_at", "user_id", "vault_token"]
   end
 
   private

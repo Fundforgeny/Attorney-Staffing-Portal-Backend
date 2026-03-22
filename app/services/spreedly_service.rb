@@ -1,5 +1,6 @@
 # app/services/spreedly_service.rb
 class SpreedlyService
+  include PaymentMethodContactFields
   def initialize(user, plan, payment_params)
     @user = user
     @plan = plan
@@ -80,13 +81,31 @@ class SpreedlyService
   end
 
   def update_payment_method
-    payment_method = @user.payment_method || @user.build_payment_method
+    payment_method = if @payment_params[:payment_method_id].present?
+      @user.payment_methods.find(@payment_params[:payment_method_id])
+    elsif @payment_params[:vault_token].present?
+      @user.payment_methods.find_or_initialize_by(vault_token: @payment_params[:vault_token])
+    else
+      @user.payment_method || @user.build_payment_method
+    end
 
     payment_method.update!(
-      provider: "Spreedly Vault",
-      vault_token: @payment_params[:vault_token],
-      card_brand: @payment_params[:card_brand]
+      {
+        provider: "Spreedly Vault",
+        vault_token: @payment_params[:vault_token].presence || payment_method.vault_token,
+        card_brand: @payment_params[:card_brand].presence || payment_method.card_brand,
+        is_default: payment_method.new_record? ? @user.payment_methods.blank? : payment_method.is_default,
+        last_updated_via_spreedly_at: Time.current
+      }.merge(extract_payment_method_contact_attrs(@payment_params, user: @user))
     )
+
+    if payment_method.vault_token.present?
+      Spreedly::PaymentMethodsService.new(client: @client).update_payment_method(
+        token: payment_method.vault_token,
+        **extract_payment_method_contact_attrs(@payment_params, user: @user)
+      )
+    end
+
     payment_method
   end
   

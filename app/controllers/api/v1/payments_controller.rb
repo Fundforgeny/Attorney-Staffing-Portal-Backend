@@ -245,7 +245,17 @@ class Api::V1::PaymentsController < ActionController::API
       :payment_method_id,
       :three_ds_session_id,
       :require_3ds,
-      :browser_info
+      :browser_info,
+      :cardholder_name,
+      :billing_email,
+      :billing_phone,
+      :billing_address1,
+      :billing_address2,
+      :billing_city,
+      :billing_state,
+      :billing_zip,
+      :billing_country,
+      payment_method: [ :vault_token, :card_brand, :payment_method_id, :cardholder_name, :billing_email, :billing_phone, :billing_address1, :billing_address2, :billing_city, :billing_state, :billing_zip, :billing_country ]
     )
   end
 
@@ -261,7 +271,15 @@ class Api::V1::PaymentsController < ActionController::API
       :exp_month,
       :exp_year,
       :cardholder_name,
-      payment_method: [ :number, :cvc, :exp_month, :exp_year, :last_four, :vault_token, :card_brand, :last4, :payment_method_id ]
+      :billing_email,
+      :billing_phone,
+      :billing_address1,
+      :billing_address2,
+      :billing_city,
+      :billing_state,
+      :billing_zip,
+      :billing_country,
+      payment_method: [ :number, :cvc, :exp_month, :exp_year, :last_four, :vault_token, :card_brand, :last4, :payment_method_id, :cardholder_name, :billing_email, :billing_phone, :billing_address1, :billing_address2, :billing_city, :billing_state, :billing_zip, :billing_country ]
     )
   end
 

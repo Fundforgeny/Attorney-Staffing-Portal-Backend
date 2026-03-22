@@ -1,6 +1,7 @@
 class Api::V1::Payment3dsController < ActionController::API
   include ApiResponse
   include Devise::Controllers::Helpers
+  include PaymentMethodContactFields
   include SpreedlyCallbackUrl
 
   before_action :authenticate_user!, except: [ :callback, :start_checkout, :complete_checkout ]
@@ -255,7 +256,7 @@ class Api::V1::Payment3dsController < ActionController::API
   end
 
   def start_checkout_params
-    params.permit(:checkout_session_id, :user_id, :plan_id, :vault_token, :card_brand, :browser_info, :amount_in_cents, :first_installment_date)
+    params.permit(:checkout_session_id, :user_id, :plan_id, :vault_token, :card_brand, :browser_info, :amount_in_cents, :first_installment_date, :cardholder_name, :billing_email, :billing_phone, :billing_address1, :billing_address2, :billing_city, :billing_state, :billing_zip, :billing_country)
   end
 
   def complete_checkout_params
@@ -276,18 +277,26 @@ class Api::V1::Payment3dsController < ActionController::API
     vault_token = start_checkout_params[:vault_token]
     raise ArgumentError, "Missing vault_token" if vault_token.blank?
 
-    existing = user.payment_methods.find_by(vault_token: vault_token)
-    return existing if existing.present?
-
-    PaymentMethod.create!(
-      user: user,
-      provider: "Spreedly Vault",
-      vault_token: vault_token,
-      card_brand: start_checkout_params[:card_brand],
-      cardholder_name: "#{user.first_name} #{user.last_name}".strip.presence || "Cardholder",
-      is_default: user.payment_methods.blank?,
-      last_updated_via_spreedly_at: Time.current
+    contact_attrs = extract_payment_method_contact_attrs(start_checkout_params, user: user)
+    payment_method = user.payment_methods.find_or_initialize_by(vault_token: vault_token)
+    payment_method.assign_attributes(
+      {
+        provider: "Spreedly Vault",
+        vault_token: vault_token,
+        card_brand: start_checkout_params[:card_brand].presence || payment_method.card_brand,
+        cardholder_name: payment_method.cardholder_name.presence || "#{user.first_name} #{user.last_name}".strip.presence || "Cardholder",
+        is_default: payment_method.new_record? ? user.payment_methods.blank? : payment_method.is_default,
+        last_updated_via_spreedly_at: Time.current
+      }.merge(contact_attrs)
     )
+    payment_method.save!
+
+    Spreedly::PaymentMethodsService.new.update_payment_method(
+      token: payment_method.vault_token,
+      **contact_attrs
+    ) if contact_attrs.present?
+
+    payment_method
   end
 
   def ensure_checkout_and_payment!(user, plan, payment_method)
@@ -300,6 +309,15 @@ class Api::V1::Payment3dsController < ActionController::API
         plan_id: plan.id,
         vault_token: payment_method.vault_token,
         card_brand: payment_method.card_brand,
+        cardholder_name: payment_method.cardholder_name,
+        billing_email: payment_method.billing_email,
+        billing_phone: payment_method.billing_phone,
+        billing_address1: payment_method.billing_address1,
+        billing_address2: payment_method.billing_address2,
+        billing_city: payment_method.billing_city,
+        billing_state: payment_method.billing_state,
+        billing_zip: payment_method.billing_zip,
+        billing_country: payment_method.billing_country,
         first_installment_date: start_checkout_params[:first_installment_date]
       }
       PaymentService.new(user, plan, checkout_params, start_checkout_params[:first_installment_date]).process_checkout
@@ -350,5 +368,4 @@ class Api::V1::Payment3dsController < ActionController::API
     ENV["SPREEDLY_WORKFLOW_KEY"].presence || ENV["SPREEDLY_COMPOSER_WORKFLOW_KEY"].presence
   end
 end
-
 

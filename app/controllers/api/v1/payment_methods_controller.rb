@@ -1,6 +1,7 @@
 class Api::V1::PaymentMethodsController < ActionController::API
   include ApiResponse
   include Devise::Controllers::Helpers
+  include PaymentMethodContactFields
 
   before_action :authenticate_user!
   before_action :set_payment_method, only: [ :show, :update, :destroy, :set_default ]
@@ -27,6 +28,14 @@ class Api::V1::PaymentMethodsController < ActionController::API
       exp_month: create_params[:exp_month],
       exp_year: create_params[:exp_year],
       cardholder_name: create_params[:cardholder_name],
+      billing_email: create_params[:billing_email],
+      billing_phone: create_params[:billing_phone],
+      billing_address1: create_params[:billing_address1],
+      billing_address2: create_params[:billing_address2],
+      billing_city: create_params[:billing_city],
+      billing_state: create_params[:billing_state],
+      billing_zip: create_params[:billing_zip],
+      billing_country: create_params[:billing_country],
       last_updated_via_spreedly_at: Time.current
     )
 
@@ -51,9 +60,7 @@ class Api::V1::PaymentMethodsController < ActionController::API
     spreedly = Spreedly::PaymentMethodsService.new
     spreadly_updated = spreedly.update_payment_method(
       token: @payment_method.vault_token,
-      full_name: update_params[:cardholder_name],
-      email: update_params[:billing_email],
-      zip: update_params[:billing_zip],
+      **extract_payment_method_contact_attrs(update_params),
       metadata: update_params[:metadata]
     )
 
@@ -63,7 +70,15 @@ class Api::V1::PaymentMethodsController < ActionController::API
       end
 
       @payment_method.update!(
-        cardholder_name: spreadly_updated["full_name"],
+        cardholder_name: spreadly_updated["full_name"].presence || @payment_method.cardholder_name,
+        billing_email: spreadly_updated["email"].presence || update_params[:billing_email] || @payment_method.billing_email,
+        billing_phone: spreadly_updated["phone_number"].presence || update_params[:billing_phone] || @payment_method.billing_phone,
+        billing_address1: spreadly_updated["address1"].presence || update_params[:billing_address1] || @payment_method.billing_address1,
+        billing_address2: spreadly_updated["address2"].presence || update_params[:billing_address2] || @payment_method.billing_address2,
+        billing_city: spreadly_updated["city"].presence || update_params[:billing_city] || @payment_method.billing_city,
+        billing_state: spreadly_updated["state"].presence || update_params[:billing_state] || @payment_method.billing_state,
+        billing_zip: spreadly_updated["zip"].presence || update_params[:billing_zip] || @payment_method.billing_zip,
+        billing_country: spreadly_updated["country"].presence || update_params[:billing_country] || @payment_method.billing_country,
         exp_month: spreadly_updated["month"] || @payment_method.exp_month,
         exp_year: spreadly_updated["year"] || @payment_method.exp_year,
         last_updated_via_spreedly_at: Time.current,
@@ -127,6 +142,14 @@ class Api::V1::PaymentMethodsController < ActionController::API
       :exp_month,
       :exp_year,
       :cardholder_name,
+      :billing_email,
+      :billing_phone,
+      :billing_address1,
+      :billing_address2,
+      :billing_city,
+      :billing_state,
+      :billing_zip,
+      :billing_country,
       :is_default
     )
   end
@@ -136,7 +159,13 @@ class Api::V1::PaymentMethodsController < ActionController::API
       :cardholder_name,
       :is_default,
       :billing_email,
+      :billing_phone,
+      :billing_address1,
+      :billing_address2,
+      :billing_city,
+      :billing_state,
       :billing_zip,
+      :billing_country,
       metadata: {}
     )
   end
@@ -150,6 +179,14 @@ class Api::V1::PaymentMethodsController < ActionController::API
       exp_month: payment_method.exp_month,
       exp_year: payment_method.exp_year,
       cardholder_name: payment_method.cardholder_name,
+      billing_email: payment_method.billing_email,
+      billing_phone: payment_method.billing_phone,
+      billing_address1: payment_method.billing_address1,
+      billing_address2: payment_method.billing_address2,
+      billing_city: payment_method.billing_city,
+      billing_state: payment_method.billing_state,
+      billing_zip: payment_method.billing_zip,
+      billing_country: payment_method.billing_country,
       is_default: payment_method.is_default,
       created_at: payment_method.created_at,
       updated_at: payment_method.updated_at,
