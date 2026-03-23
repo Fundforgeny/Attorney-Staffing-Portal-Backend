@@ -266,7 +266,7 @@ class Api::V1::Payment3dsController < ActionController::API
   end
 
   def start_checkout_params
-    params.permit(:checkout_session_id, :user_id, :plan_id, :vault_token, :card_brand, :last4, :exp_month, :exp_year, :amount_in_cents, :first_installment_date, :cardholder_name, :billing_email, :billing_phone_number, :billing_company, :billing_address1, :billing_address2, :billing_city, :billing_state, :billing_zip, :billing_country, :shipping_address1, :shipping_address2, :shipping_city, :shipping_state, :shipping_zip, :shipping_country, :shipping_phone_number, payment_method: [ :vault_token, :card_brand, :last4, :exp_month, :exp_year, :cardholder_name, :billing_email, :billing_phone_number, :billing_company, :billing_address1, :billing_address2, :billing_city, :billing_state, :billing_zip, :billing_country, :shipping_address1, :shipping_address2, :shipping_city, :shipping_state, :shipping_zip, :shipping_country, :shipping_phone_number, { billing_address: {}, shipping_address: {} } ], billing_address: {}, shipping_address: {}, browser_info: {})
+    params.permit(:checkout_session_id, :user_id, :plan_id, :vault_token, :card_brand, :amount_in_cents, :first_installment_date, :cardholder_name, :billing_email, :billing_phone_number, :billing_company, :billing_address1, :billing_address2, :billing_city, :billing_state, :billing_zip, :billing_country, :shipping_address1, :shipping_address2, :shipping_city, :shipping_state, :shipping_zip, :shipping_country, :shipping_phone_number, billing_address: {}, shipping_address: {}, browser_info: {})
   end
 
   def complete_checkout_params
@@ -398,7 +398,7 @@ class Api::V1::Payment3dsController < ActionController::API
   end
 
   def spreedly_payment_method_attributes(params)
-    source = params.respond_to?(:to_h) ? params.to_h.deep_symbolize_keys : (params.is_a?(Hash) ? params.deep_symbolize_keys : {})
+    source = params.respond_to?(:to_h) ? params.to_h.deep_symbolize_keys : {}
     billing = extract_address(source, {}, :billing)
     shipping = extract_address(source, {}, :shipping)
 

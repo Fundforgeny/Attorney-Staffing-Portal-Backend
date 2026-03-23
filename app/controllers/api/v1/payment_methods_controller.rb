@@ -7,7 +7,7 @@ class Api::V1::PaymentMethodsController < ActionController::API
 
   def index
     payment_methods = current_user.payment_methods.ordered_for_user
-    render_success(data: payment_methods.map { |payment_method| serialize_payment_method(payment_method) }, status: :ok)
+    render_success(data: payment_methods.map { |payment_method| serialize_payment_method(payment_method, spreedly_payment_method: spreedly_payment_method_snapshot(payment_method)) }, status: :ok)
   end
 
   def show
