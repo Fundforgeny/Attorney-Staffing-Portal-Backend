@@ -284,23 +284,24 @@ class Api::V1::Payment3dsController < ActionController::API
   end
 
   def resolve_payment_method_for_checkout!(user)
-    vault_token = start_checkout_params[:vault_token]
+    vault_token = start_checkout_params[:vault_token].presence || start_checkout_params.dig(:payment_method, :vault_token).presence
     raise ArgumentError, "Missing vault_token" if vault_token.blank?
 
     sync_spreedly_payment_method!(vault_token, start_checkout_params)
 
-    existing = user.payment_methods.find_by(vault_token: vault_token)
-    return existing if existing.present?
-
-    PaymentMethod.create!(
-      user: user,
-      provider: "Spreedly Vault",
-      vault_token: vault_token,
-      card_brand: start_checkout_params[:card_brand],
-      cardholder_name: "#{user.first_name} #{user.last_name}".strip.presence || "Cardholder",
-      is_default: user.payment_methods.blank?,
+    payment_method = user.payment_methods.find_or_initialize_by(vault_token: vault_token)
+    payment_method.assign_attributes(
+      provider: payment_method.provider.presence || "Spreedly Vault",
+      card_brand: start_checkout_params[:card_brand].presence || start_checkout_params.dig(:payment_method, :card_brand) || payment_method.card_brand,
+      last4: start_checkout_params[:last4].presence || start_checkout_params.dig(:payment_method, :last4) || payment_method.last4,
+      exp_month: start_checkout_params[:exp_month].presence || start_checkout_params.dig(:payment_method, :exp_month) || payment_method.exp_month,
+      exp_year: start_checkout_params[:exp_year].presence || start_checkout_params.dig(:payment_method, :exp_year) || payment_method.exp_year,
+      cardholder_name: start_checkout_params[:cardholder_name].presence || start_checkout_params.dig(:payment_method, :cardholder_name).presence || payment_method.cardholder_name.presence || "#{user.first_name} #{user.last_name}".strip.presence || "Cardholder",
+      is_default: payment_method.new_record? ? user.payment_methods.blank? : payment_method.is_default,
       last_updated_via_spreedly_at: Time.current
     )
+    payment_method.save!
+    payment_method
   end
 
   def ensure_checkout_and_payment!(user, plan, payment_method)

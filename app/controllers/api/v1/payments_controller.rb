@@ -472,15 +472,20 @@ class Api::V1::PaymentsController < ActionController::API
       return @user.payment_methods.find(@payment_params[:payment_method_id])
     end
 
-    if @payment_params[:vault_token].present?
-      sync_spreedly_payment_method!(@payment_params[:vault_token], @payment_params)
+    vault_token = @payment_params[:vault_token].presence || @payment_params.dig(:payment_method, :vault_token).presence
+    if vault_token.present?
+      sync_spreedly_payment_method!(vault_token, @payment_params)
 
-      payment_method = @user.payment_methods.new(
-        vault_token: @payment_params[:vault_token],
-        provider: "Spreedly Vault",
-        card_brand: @payment_params[:card_brand],
+      payment_method = @user.payment_methods.find_or_initialize_by(vault_token: vault_token)
+      payment_method.assign_attributes(
+        provider: payment_method.provider.presence || "Spreedly Vault",
+        card_brand: @payment_params[:card_brand].presence || @payment_params.dig(:payment_method, :card_brand) || payment_method.card_brand,
+        last4: @payment_params[:last4].presence || @payment_params.dig(:payment_method, :last4) || payment_method.last4,
+        exp_month: @payment_params[:exp_month].presence || @payment_params.dig(:payment_method, :exp_month) || payment_method.exp_month,
+        exp_year: @payment_params[:exp_year].presence || @payment_params.dig(:payment_method, :exp_year) || payment_method.exp_year,
+        cardholder_name: @payment_params[:cardholder_name].presence || @payment_params.dig(:payment_method, :cardholder_name).presence || payment_method.cardholder_name,
         last_updated_via_spreedly_at: Time.current,
-        is_default: @user.payment_methods.blank?
+        is_default: payment_method.new_record? ? @user.payment_methods.blank? : payment_method.is_default
       )
       payment_method.save!
       return payment_method

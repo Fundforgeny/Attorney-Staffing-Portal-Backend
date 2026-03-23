@@ -39,17 +39,19 @@ class PaymentService
   def find_or_create_tokenized_payment_method!(vault_token, params)
     sync_spreedly_payment_method!(vault_token, params)
 
-    PaymentMethod.create!(
-      user: @user,
-      provider: "Spreedly Vault",
-      vault_token: vault_token,
-      card_brand: params[:card_brand].presence || params.dig(:payment_method, :card_brand),
-      cardholder_name: params[:cardholder_name].presence || "#{@user.first_name} #{@user.last_name}".strip,
-      last4: params[:last4].presence || params.dig(:payment_method, :last4),
-      exp_month: params[:exp_month].presence || params.dig(:payment_method, :exp_month),
-      exp_year: params[:exp_year].presence || params.dig(:payment_method, :exp_year),
-      is_default: @user.payment_methods.blank?
+    payment_method = @user.payment_methods.find_or_initialize_by(vault_token: vault_token)
+    payment_method.assign_attributes(
+      provider: payment_method.provider.presence || "Spreedly Vault",
+      card_brand: params[:card_brand].presence || params.dig(:payment_method, :card_brand) || payment_method.card_brand,
+      cardholder_name: params[:cardholder_name].presence || params.dig(:payment_method, :cardholder_name).presence || payment_method.cardholder_name.presence || "#{@user.first_name} #{@user.last_name}".strip,
+      last4: params[:last4].presence || params.dig(:payment_method, :last4) || payment_method.last4,
+      exp_month: params[:exp_month].presence || params.dig(:payment_method, :exp_month) || payment_method.exp_month,
+      exp_year: params[:exp_year].presence || params.dig(:payment_method, :exp_year) || payment_method.exp_year,
+      is_default: payment_method.new_record? ? @user.payment_methods.blank? : payment_method.is_default,
+      last_updated_via_spreedly_at: Time.current
     )
+    payment_method.save!
+    payment_method
   end
 
   # Legacy fallback for older clients that still post raw card fields.
@@ -193,7 +195,7 @@ class PaymentService
   end
 
   def normalized_payment_params
-    raw = @payment_params.respond_to?(:to_h) ? @payment_params.to_h : {}
+    raw = @payment_params.respond_to?(:to_h) ? @payment_params.to_h : (@payment_params.is_a?(Hash) ? @payment_params : {})
     raw.deep_symbolize_keys
   rescue StandardError
     {}
