@@ -66,11 +66,17 @@ module Spreedly
       optional = {
         sca_required_action: sca["required_action"],
         challenge_form_html: sca["challenge_form"],
+        challenge_form_embed_url: sca["challenge_form_embed_url"],
         sca_authentication_token: sca["token"],
+        managed_order_token: sca["managed_order_token"],
         authentication_value: sca["authentication_value"],
         eci: sca["eci"],
         xid: sca["xid"],
         directory_server_transaction_id: sca["directory_server_transaction_id"],
+        three_ds_server_trans_id: sca["three_ds_server_trans_id"],
+        three_ds_version: sca["three_ds_version"],
+        flow_performed: sca["flow_performed"],
+        trans_status_reason: sca["trans_status_reason"],
         enrolled: sca["enrolled"],
         authenticated: sca["authenticated"]
       }.compact

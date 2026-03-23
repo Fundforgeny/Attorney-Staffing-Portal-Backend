@@ -266,7 +266,7 @@ class Api::V1::Payment3dsController < ActionController::API
   end
 
   def start_checkout_params
-    params.permit(:checkout_session_id, :user_id, :plan_id, :vault_token, :card_brand, :amount_in_cents, :first_installment_date, :cardholder_name, :billing_email, :billing_phone_number, :billing_company, :billing_address1, :billing_address2, :billing_city, :billing_state, :billing_zip, :billing_country, :shipping_address1, :shipping_address2, :shipping_city, :shipping_state, :shipping_zip, :shipping_country, :shipping_phone_number, browser_info: {})
+    params.permit(:checkout_session_id, :user_id, :plan_id, :vault_token, :card_brand, :amount_in_cents, :first_installment_date, :cardholder_name, :billing_email, :billing_phone_number, :billing_company, :billing_address1, :billing_address2, :billing_city, :billing_state, :billing_zip, :billing_country, :shipping_address1, :shipping_address2, :shipping_city, :shipping_state, :shipping_zip, :shipping_country, :shipping_phone_number, billing_address: {}, shipping_address: {}, browser_info: {})
   end
 
   def complete_checkout_params
@@ -398,25 +398,42 @@ class Api::V1::Payment3dsController < ActionController::API
 
   def spreedly_payment_method_attributes(params)
     source = params.respond_to?(:to_h) ? params.to_h.deep_symbolize_keys : {}
+    billing = extract_address(source, {}, :billing)
+    shipping = extract_address(source, {}, :shipping)
 
     {
       full_name: source[:cardholder_name],
       email: source[:billing_email],
       phone_number: source[:billing_phone_number],
       company: source[:billing_company],
-      address1: source[:billing_address1],
-      address2: source[:billing_address2],
-      city: source[:billing_city],
-      state: source[:billing_state],
-      zip: source[:billing_zip],
-      country: source[:billing_country],
-      shipping_address1: source[:shipping_address1],
-      shipping_address2: source[:shipping_address2],
-      shipping_city: source[:shipping_city],
-      shipping_state: source[:shipping_state],
-      shipping_zip: source[:shipping_zip],
-      shipping_country: source[:shipping_country],
-      shipping_phone_number: source[:shipping_phone_number]
+      address1: billing[:address1],
+      address2: billing[:address2],
+      city: billing[:city],
+      state: billing[:state],
+      zip: billing[:zip],
+      country: billing[:country],
+      shipping_address1: shipping[:address1],
+      shipping_address2: shipping[:address2],
+      shipping_city: shipping[:city],
+      shipping_state: shipping[:state],
+      shipping_zip: shipping[:zip],
+      shipping_country: shipping[:country],
+      shipping_phone_number: source[:shipping_phone_number].presence || shipping[:phone_number]
+    }.compact_blank
+  end
+
+  def extract_address(source, nested, prefix)
+    nested_address = nested["#{prefix}_address".to_sym].is_a?(Hash) ? nested["#{prefix}_address".to_sym] : {}
+    direct_address = source["#{prefix}_address".to_sym].is_a?(Hash) ? source["#{prefix}_address".to_sym] : {}
+
+    {
+      address1: source["#{prefix}_address1".to_sym].presence || nested["#{prefix}_address1".to_sym].presence || direct_address[:address1].presence || direct_address[:line1].presence || direct_address[:street].presence || nested_address[:address1].presence || nested_address[:line1].presence || nested_address[:street].presence,
+      address2: source["#{prefix}_address2".to_sym].presence || nested["#{prefix}_address2".to_sym].presence || direct_address[:address2].presence || direct_address[:line2].presence || nested_address[:address2].presence || nested_address[:line2].presence,
+      city: source["#{prefix}_city".to_sym].presence || nested["#{prefix}_city".to_sym].presence || direct_address[:city].presence || nested_address[:city].presence,
+      state: source["#{prefix}_state".to_sym].presence || nested["#{prefix}_state".to_sym].presence || direct_address[:state].presence || direct_address[:province].presence || direct_address[:region].presence || nested_address[:state].presence || nested_address[:province].presence || nested_address[:region].presence,
+      zip: source["#{prefix}_zip".to_sym].presence || nested["#{prefix}_zip".to_sym].presence || direct_address[:zip].presence || direct_address[:postal_code].presence || nested_address[:zip].presence || nested_address[:postal_code].presence,
+      country: source["#{prefix}_country".to_sym].presence || nested["#{prefix}_country".to_sym].presence || direct_address[:country].presence || direct_address[:country_code].presence || nested_address[:country].presence || nested_address[:country_code].presence,
+      phone_number: direct_address[:phone_number].presence || nested_address[:phone_number].presence
     }.compact_blank
   end
 
@@ -424,5 +441,3 @@ class Api::V1::Payment3dsController < ActionController::API
     ENV["SPREEDLY_WORKFLOW_KEY"].presence || ENV["SPREEDLY_COMPOSER_WORKFLOW_KEY"].presence
   end
 end
-
-

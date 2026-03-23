@@ -143,7 +143,9 @@ class Api::V1::PaymentMethodsController < ActionController::API
       :shipping_zip,
       :shipping_country,
       :shipping_phone_number,
-      :is_default
+      :is_default,
+      billing_address: {},
+      shipping_address: {}
     )
   end
 
@@ -167,30 +169,50 @@ class Api::V1::PaymentMethodsController < ActionController::API
       :shipping_zip,
       :shipping_country,
       :shipping_phone_number,
+      billing_address: {},
+      shipping_address: {},
       metadata: {}
     )
   end
 
   def spreedly_payment_method_attributes(permitted_params)
+    source = permitted_params.respond_to?(:to_h) ? permitted_params.to_h.deep_symbolize_keys : {}
+    billing = extract_address(source, :billing)
+    shipping = extract_address(source, :shipping)
+
     {
-      full_name: permitted_params[:cardholder_name],
-      email: permitted_params[:billing_email],
-      phone_number: permitted_params[:billing_phone_number],
-      company: permitted_params[:billing_company],
-      address1: permitted_params[:billing_address1],
-      address2: permitted_params[:billing_address2],
-      city: permitted_params[:billing_city],
-      state: permitted_params[:billing_state],
-      zip: permitted_params[:billing_zip],
-      country: permitted_params[:billing_country],
-      shipping_address1: permitted_params[:shipping_address1],
-      shipping_address2: permitted_params[:shipping_address2],
-      shipping_city: permitted_params[:shipping_city],
-      shipping_state: permitted_params[:shipping_state],
-      shipping_zip: permitted_params[:shipping_zip],
-      shipping_country: permitted_params[:shipping_country],
-      shipping_phone_number: permitted_params[:shipping_phone_number],
-      metadata: permitted_params[:metadata]
+      full_name: source[:cardholder_name],
+      email: source[:billing_email],
+      phone_number: source[:billing_phone_number],
+      company: source[:billing_company],
+      address1: billing[:address1],
+      address2: billing[:address2],
+      city: billing[:city],
+      state: billing[:state],
+      zip: billing[:zip],
+      country: billing[:country],
+      shipping_address1: shipping[:address1],
+      shipping_address2: shipping[:address2],
+      shipping_city: shipping[:city],
+      shipping_state: shipping[:state],
+      shipping_zip: shipping[:zip],
+      shipping_country: shipping[:country],
+      shipping_phone_number: source[:shipping_phone_number].presence || shipping[:phone_number],
+      metadata: source[:metadata]
+    }.compact_blank
+  end
+
+  def extract_address(source, prefix)
+    direct_address = source["#{prefix}_address".to_sym].is_a?(Hash) ? source["#{prefix}_address".to_sym] : {}
+
+    {
+      address1: source["#{prefix}_address1".to_sym].presence || direct_address[:address1].presence || direct_address[:line1].presence || direct_address[:street].presence,
+      address2: source["#{prefix}_address2".to_sym].presence || direct_address[:address2].presence || direct_address[:line2].presence,
+      city: source["#{prefix}_city".to_sym].presence || direct_address[:city].presence,
+      state: source["#{prefix}_state".to_sym].presence || direct_address[:state].presence || direct_address[:province].presence || direct_address[:region].presence,
+      zip: source["#{prefix}_zip".to_sym].presence || direct_address[:zip].presence || direct_address[:postal_code].presence,
+      country: source["#{prefix}_country".to_sym].presence || direct_address[:country].presence || direct_address[:country_code].presence,
+      phone_number: direct_address[:phone_number].presence
     }.compact_blank
   end
 
@@ -220,6 +242,3 @@ class Api::V1::PaymentMethodsController < ActionController::API
     error.status.to_i == 404
   end
 end
-
-
-
