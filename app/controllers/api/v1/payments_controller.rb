@@ -264,7 +264,6 @@ class Api::V1::PaymentsController < ActionController::API
       :shipping_phone_number,
       billing_address: {},
       shipping_address: {},
-      payment_method: [ :vault_token, :card_brand, :last4, :exp_month, :exp_year, :cardholder_name, :billing_email, :billing_phone_number, :billing_company, :billing_address1, :billing_address2, :billing_city, :billing_state, :billing_zip, :billing_country, :shipping_address1, :shipping_address2, :shipping_city, :shipping_state, :shipping_zip, :shipping_country, :shipping_phone_number, { billing_address: {}, shipping_address: {} } ],
       browser_info: {}
     )
   end
