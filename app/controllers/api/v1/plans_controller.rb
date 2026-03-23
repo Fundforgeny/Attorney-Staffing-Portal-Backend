@@ -31,6 +31,8 @@ class Api::V1::PlansController < ActionController::API
       raise
     end
 
+    GhlPlanSyncWorker.perform_async(plan.id, GhlInboundWebhookService.plan_created_event) if created && plan.persisted?
+
     render_success(
       data: serialized_plan(plan),
       message: created ? "Plan created successfully" : "Plan updated successfully",
@@ -74,6 +76,7 @@ class Api::V1::PlansController < ActionController::API
     end
 
     @plan.update!(status: :paid)
+    GhlInboundWebhookWorker.perform_async(succeeded_payment.id)
     render_success(data: serialized_plan(@plan), message: "Plan marked as paid", status: :ok)
   end
 
@@ -81,6 +84,8 @@ class Api::V1::PlansController < ActionController::API
     return render_error(message: "Paid plan cannot be marked as failed", status: :unprocessable_entity) if @plan.paid?
 
     @plan.update!(status: :failed)
+    failed_payment = @plan.payments.where(status: :failed).order(updated_at: :desc).first
+    GhlInboundWebhookWorker.perform_async(failed_payment.id, GhlInboundWebhookService::PAYMENT_FAILED_EVENT) if failed_payment.present?
     render_success(data: serialized_plan(@plan), message: "Plan marked as failed", status: :ok)
   end
 
@@ -273,4 +278,3 @@ class Api::V1::PlansController < ActionController::API
     }
   end
 end
-
