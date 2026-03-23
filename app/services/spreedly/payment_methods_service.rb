@@ -1,5 +1,28 @@
 module Spreedly
   class PaymentMethodsService
+    UPDATABLE_FIELDS = %i[
+      full_name
+      first_name
+      last_name
+      email
+      phone_number
+      company
+      address1
+      address2
+      city
+      state
+      zip
+      country
+      shipping_address1
+      shipping_address2
+      shipping_city
+      shipping_state
+      shipping_zip
+      shipping_country
+      shipping_phone_number
+      metadata
+    ].freeze
+
     def initialize(client: Spreedly::Client.new)
       @client = client
     end
@@ -24,16 +47,16 @@ module Spreedly
       response.fetch("payment_method")
     end
 
-    def update_payment_method(token:, full_name: nil, email: nil, zip: nil, metadata: nil)
-      payload = {
-        payment_method: {}
-      }
-      payload[:payment_method][:full_name] = full_name if full_name.present?
-      payload[:payment_method][:email] = email if email.present?
-      payload[:payment_method][:zip] = zip if zip.present?
-      payload[:payment_method][:metadata] = metadata if metadata.present?
+    def update_payment_method(token:, **attributes)
+      payment_method = attributes.slice(*UPDATABLE_FIELDS).compact_blank
+      return get_payment_method(token: token) if payment_method.blank?
 
-      response = @client.put("/payment_methods/#{token}.json", body: payload)
+      response = @client.put("/payment_methods/#{token}.json", body: { payment_method: payment_method })
+      response.fetch("payment_method")
+    end
+
+    def get_payment_method(token:)
+      response = @client.get("/payment_methods/#{token}.json")
       response.fetch("payment_method")
     end
 
@@ -43,5 +66,3 @@ module Spreedly
     end
   end
 end
-
-

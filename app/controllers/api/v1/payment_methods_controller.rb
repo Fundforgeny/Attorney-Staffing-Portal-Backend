@@ -19,6 +19,9 @@ class Api::V1::PaymentMethodsController < ActionController::API
       return render_error(message: "vault_token is required", status: :bad_request)
     end
 
+    sync_attrs = spreedly_payment_method_attributes(create_params)
+    Spreedly::PaymentMethodsService.new.update_payment_method(token: create_params[:vault_token], **sync_attrs) if sync_attrs.present?
+
     payment_method = current_user.payment_methods.new(
       provider: create_params[:provider].presence || "Spreedly Vault",
       vault_token: create_params[:vault_token],
@@ -51,10 +54,7 @@ class Api::V1::PaymentMethodsController < ActionController::API
     spreedly = Spreedly::PaymentMethodsService.new
     spreadly_updated = spreedly.update_payment_method(
       token: @payment_method.vault_token,
-      full_name: update_params[:cardholder_name],
-      email: update_params[:billing_email],
-      zip: update_params[:billing_zip],
-      metadata: update_params[:metadata]
+      **spreedly_payment_method_attributes(update_params)
     )
 
     ActiveRecord::Base.transaction do
@@ -127,6 +127,22 @@ class Api::V1::PaymentMethodsController < ActionController::API
       :exp_month,
       :exp_year,
       :cardholder_name,
+      :billing_email,
+      :billing_phone_number,
+      :billing_company,
+      :billing_address1,
+      :billing_address2,
+      :billing_city,
+      :billing_state,
+      :billing_zip,
+      :billing_country,
+      :shipping_address1,
+      :shipping_address2,
+      :shipping_city,
+      :shipping_state,
+      :shipping_zip,
+      :shipping_country,
+      :shipping_phone_number,
       :is_default
     )
   end
@@ -136,9 +152,46 @@ class Api::V1::PaymentMethodsController < ActionController::API
       :cardholder_name,
       :is_default,
       :billing_email,
+      :billing_phone_number,
+      :billing_company,
+      :billing_address1,
+      :billing_address2,
+      :billing_city,
+      :billing_state,
       :billing_zip,
+      :billing_country,
+      :shipping_address1,
+      :shipping_address2,
+      :shipping_city,
+      :shipping_state,
+      :shipping_zip,
+      :shipping_country,
+      :shipping_phone_number,
       metadata: {}
     )
+  end
+
+  def spreedly_payment_method_attributes(permitted_params)
+    {
+      full_name: permitted_params[:cardholder_name],
+      email: permitted_params[:billing_email],
+      phone_number: permitted_params[:billing_phone_number],
+      company: permitted_params[:billing_company],
+      address1: permitted_params[:billing_address1],
+      address2: permitted_params[:billing_address2],
+      city: permitted_params[:billing_city],
+      state: permitted_params[:billing_state],
+      zip: permitted_params[:billing_zip],
+      country: permitted_params[:billing_country],
+      shipping_address1: permitted_params[:shipping_address1],
+      shipping_address2: permitted_params[:shipping_address2],
+      shipping_city: permitted_params[:shipping_city],
+      shipping_state: permitted_params[:shipping_state],
+      shipping_zip: permitted_params[:shipping_zip],
+      shipping_country: permitted_params[:shipping_country],
+      shipping_phone_number: permitted_params[:shipping_phone_number],
+      metadata: permitted_params[:metadata]
+    }.compact_blank
   end
 
   def serialize_payment_method(payment_method)

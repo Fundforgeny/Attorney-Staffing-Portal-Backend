@@ -37,6 +37,8 @@ class PaymentService
   end
 
   def find_or_create_tokenized_payment_method!(vault_token, params)
+    sync_spreedly_payment_method!(vault_token, params)
+
     PaymentMethod.create!(
       user: @user,
       provider: "Spreedly Vault",
@@ -51,6 +53,41 @@ class PaymentService
   end
 
   # Legacy fallback for older clients that still post raw card fields.
+  def sync_spreedly_payment_method!(vault_token, params)
+    attributes = spreedly_payment_method_attributes(params)
+    return if attributes.blank?
+
+    Spreedly::PaymentMethodsService.new.update_payment_method(token: vault_token, **attributes)
+  rescue Spreedly::Error => e
+    Rails.logger.warn("Failed to sync Spreedly payment method #{vault_token}: #{e.message}")
+  end
+
+  def spreedly_payment_method_attributes(params)
+    payment_method = params[:payment_method].is_a?(Hash) ? params[:payment_method] : {}
+
+    {
+      full_name: params[:cardholder_name].presence || payment_method[:cardholder_name].presence || "#{@user.first_name} #{@user.last_name}".strip.presence,
+      first_name: params[:first_name].presence || payment_method[:first_name].presence || @user.first_name,
+      last_name: params[:last_name].presence || payment_method[:last_name].presence || @user.last_name,
+      email: params[:billing_email].presence || payment_method[:billing_email].presence || @user.email,
+      phone_number: params[:billing_phone_number].presence || payment_method[:billing_phone_number].presence,
+      company: params[:billing_company].presence || payment_method[:billing_company].presence,
+      address1: params[:billing_address1].presence || payment_method[:billing_address1].presence || params[:address1].presence || payment_method[:address1].presence,
+      address2: params[:billing_address2].presence || payment_method[:billing_address2].presence || params[:address2].presence || payment_method[:address2].presence,
+      city: params[:billing_city].presence || payment_method[:billing_city].presence || params[:city].presence || payment_method[:city].presence,
+      state: params[:billing_state].presence || payment_method[:billing_state].presence || params[:state].presence || payment_method[:state].presence,
+      zip: params[:billing_zip].presence || payment_method[:billing_zip].presence || params[:zip].presence || payment_method[:zip].presence,
+      country: params[:billing_country].presence || payment_method[:billing_country].presence || params[:country].presence || payment_method[:country].presence,
+      shipping_address1: params[:shipping_address1].presence || payment_method[:shipping_address1].presence,
+      shipping_address2: params[:shipping_address2].presence || payment_method[:shipping_address2].presence,
+      shipping_city: params[:shipping_city].presence || payment_method[:shipping_city].presence,
+      shipping_state: params[:shipping_state].presence || payment_method[:shipping_state].presence,
+      shipping_zip: params[:shipping_zip].presence || payment_method[:shipping_zip].presence,
+      shipping_country: params[:shipping_country].presence || payment_method[:shipping_country].presence,
+      shipping_phone_number: params[:shipping_phone_number].presence || payment_method[:shipping_phone_number].presence
+    }.compact_blank
+  end
+
   def store_legacy_card_details(legacy_params)
     PaymentMethod.create!(
       user: @user,
