@@ -266,7 +266,7 @@ class Api::V1::Payment3dsController < ActionController::API
   end
 
   def start_checkout_params
-    params.permit(:checkout_session_id, :user_id, :plan_id, :vault_token, :card_brand, :amount_in_cents, :first_installment_date, :cardholder_name, :billing_email, :billing_phone_number, :billing_company, :billing_address1, :billing_address2, :billing_city, :billing_state, :billing_zip, :billing_country, :shipping_address1, :shipping_address2, :shipping_city, :shipping_state, :shipping_zip, :shipping_country, :shipping_phone_number, browser_info: {})
+    params.permit(:checkout_session_id, :user_id, :plan_id, :vault_token, :card_brand, :last4, :exp_month, :exp_year, :amount_in_cents, :first_installment_date, :cardholder_name, :billing_email, :billing_phone_number, :billing_company, :billing_address1, :billing_address2, :billing_city, :billing_state, :billing_zip, :billing_country, :shipping_address1, :shipping_address2, :shipping_city, :shipping_state, :shipping_zip, :shipping_country, :shipping_phone_number, payment_method: [ :vault_token, :card_brand, :last4, :exp_month, :exp_year, :cardholder_name, :billing_email, :billing_phone_number, :billing_company, :billing_address1, :billing_address2, :billing_city, :billing_state, :billing_zip, :billing_country, :shipping_address1, :shipping_address2, :shipping_city, :shipping_state, :shipping_zip, :shipping_country, :shipping_phone_number, { billing_address: {}, shipping_address: {} } ], billing_address: {}, shipping_address: {}, browser_info: {})
   end
 
   def complete_checkout_params
@@ -284,23 +284,24 @@ class Api::V1::Payment3dsController < ActionController::API
   end
 
   def resolve_payment_method_for_checkout!(user)
-    vault_token = start_checkout_params[:vault_token]
+    vault_token = start_checkout_params[:vault_token].presence || start_checkout_params.dig(:payment_method, :vault_token).presence
     raise ArgumentError, "Missing vault_token" if vault_token.blank?
 
     sync_spreedly_payment_method!(vault_token, start_checkout_params)
 
-    existing = user.payment_methods.find_by(vault_token: vault_token)
-    return existing if existing.present?
-
-    PaymentMethod.create!(
-      user: user,
-      provider: "Spreedly Vault",
-      vault_token: vault_token,
-      card_brand: start_checkout_params[:card_brand],
-      cardholder_name: "#{user.first_name} #{user.last_name}".strip.presence || "Cardholder",
-      is_default: user.payment_methods.blank?,
+    payment_method = user.payment_methods.find_or_initialize_by(vault_token: vault_token)
+    payment_method.assign_attributes(
+      provider: payment_method.provider.presence || "Spreedly Vault",
+      card_brand: start_checkout_params[:card_brand].presence || start_checkout_params.dig(:payment_method, :card_brand) || payment_method.card_brand,
+      last4: start_checkout_params[:last4].presence || start_checkout_params.dig(:payment_method, :last4) || payment_method.last4,
+      exp_month: start_checkout_params[:exp_month].presence || start_checkout_params.dig(:payment_method, :exp_month) || payment_method.exp_month,
+      exp_year: start_checkout_params[:exp_year].presence || start_checkout_params.dig(:payment_method, :exp_year) || payment_method.exp_year,
+      cardholder_name: start_checkout_params[:cardholder_name].presence || start_checkout_params.dig(:payment_method, :cardholder_name).presence || payment_method.cardholder_name.presence || "#{user.first_name} #{user.last_name}".strip.presence || "Cardholder",
+      is_default: payment_method.new_record? ? user.payment_methods.blank? : payment_method.is_default,
       last_updated_via_spreedly_at: Time.current
     )
+    payment_method.save!
+    payment_method
   end
 
   def ensure_checkout_and_payment!(user, plan, payment_method)
@@ -397,26 +398,43 @@ class Api::V1::Payment3dsController < ActionController::API
   end
 
   def spreedly_payment_method_attributes(params)
-    source = params.respond_to?(:to_h) ? params.to_h.deep_symbolize_keys : {}
+    source = params.respond_to?(:to_h) ? params.to_h.deep_symbolize_keys : (params.is_a?(Hash) ? params.deep_symbolize_keys : {})
+    billing = extract_address(source, {}, :billing)
+    shipping = extract_address(source, {}, :shipping)
 
     {
       full_name: source[:cardholder_name],
       email: source[:billing_email],
       phone_number: source[:billing_phone_number],
       company: source[:billing_company],
-      address1: source[:billing_address1],
-      address2: source[:billing_address2],
-      city: source[:billing_city],
-      state: source[:billing_state],
-      zip: source[:billing_zip],
-      country: source[:billing_country],
-      shipping_address1: source[:shipping_address1],
-      shipping_address2: source[:shipping_address2],
-      shipping_city: source[:shipping_city],
-      shipping_state: source[:shipping_state],
-      shipping_zip: source[:shipping_zip],
-      shipping_country: source[:shipping_country],
-      shipping_phone_number: source[:shipping_phone_number]
+      address1: billing[:address1],
+      address2: billing[:address2],
+      city: billing[:city],
+      state: billing[:state],
+      zip: billing[:zip],
+      country: billing[:country],
+      shipping_address1: shipping[:address1],
+      shipping_address2: shipping[:address2],
+      shipping_city: shipping[:city],
+      shipping_state: shipping[:state],
+      shipping_zip: shipping[:zip],
+      shipping_country: shipping[:country],
+      shipping_phone_number: source[:shipping_phone_number].presence || shipping[:phone_number]
+    }.compact_blank
+  end
+
+  def extract_address(source, nested, prefix)
+    nested_address = nested["#{prefix}_address".to_sym].is_a?(Hash) ? nested["#{prefix}_address".to_sym] : {}
+    direct_address = source["#{prefix}_address".to_sym].is_a?(Hash) ? source["#{prefix}_address".to_sym] : {}
+
+    {
+      address1: source["#{prefix}_address1".to_sym].presence || nested["#{prefix}_address1".to_sym].presence || direct_address[:address1].presence || direct_address[:line1].presence || direct_address[:street].presence || nested_address[:address1].presence || nested_address[:line1].presence || nested_address[:street].presence,
+      address2: source["#{prefix}_address2".to_sym].presence || nested["#{prefix}_address2".to_sym].presence || direct_address[:address2].presence || direct_address[:line2].presence || nested_address[:address2].presence || nested_address[:line2].presence,
+      city: source["#{prefix}_city".to_sym].presence || nested["#{prefix}_city".to_sym].presence || direct_address[:city].presence || nested_address[:city].presence,
+      state: source["#{prefix}_state".to_sym].presence || nested["#{prefix}_state".to_sym].presence || direct_address[:state].presence || direct_address[:province].presence || direct_address[:region].presence || nested_address[:state].presence || nested_address[:province].presence || nested_address[:region].presence,
+      zip: source["#{prefix}_zip".to_sym].presence || nested["#{prefix}_zip".to_sym].presence || direct_address[:zip].presence || direct_address[:postal_code].presence || nested_address[:zip].presence || nested_address[:postal_code].presence,
+      country: source["#{prefix}_country".to_sym].presence || nested["#{prefix}_country".to_sym].presence || direct_address[:country].presence || direct_address[:country_code].presence || nested_address[:country].presence || nested_address[:country_code].presence,
+      phone_number: direct_address[:phone_number].presence || nested_address[:phone_number].presence
     }.compact_blank
   end
 
@@ -424,5 +442,3 @@ class Api::V1::Payment3dsController < ActionController::API
     ENV["SPREEDLY_WORKFLOW_KEY"].presence || ENV["SPREEDLY_COMPOSER_WORKFLOW_KEY"].presence
   end
 end
-
-
