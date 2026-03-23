@@ -258,7 +258,7 @@ class Api::V1::Payment3dsController < ActionController::API
   private
 
   def start_params
-    params.permit(:plan_id, :payment_method_id, :browser_info)
+    params.permit(:plan_id, :payment_method_id, browser_info: {})
   end
 
   def complete_params
@@ -266,7 +266,7 @@ class Api::V1::Payment3dsController < ActionController::API
   end
 
   def start_checkout_params
-    params.permit(:checkout_session_id, :user_id, :plan_id, :vault_token, :card_brand, :browser_info, :amount_in_cents, :first_installment_date)
+    params.permit(:checkout_session_id, :user_id, :plan_id, :vault_token, :card_brand, :amount_in_cents, :first_installment_date, :cardholder_name, :billing_email, :billing_phone_number, :billing_company, :billing_address1, :billing_address2, :billing_city, :billing_state, :billing_zip, :billing_country, :shipping_address1, :shipping_address2, :shipping_city, :shipping_state, :shipping_zip, :shipping_country, :shipping_phone_number, browser_info: {})
   end
 
   def complete_checkout_params
@@ -286,6 +286,8 @@ class Api::V1::Payment3dsController < ActionController::API
   def resolve_payment_method_for_checkout!(user)
     vault_token = start_checkout_params[:vault_token]
     raise ArgumentError, "Missing vault_token" if vault_token.blank?
+
+    sync_spreedly_payment_method!(vault_token, start_checkout_params)
 
     existing = user.payment_methods.find_by(vault_token: vault_token)
     return existing if existing.present?
@@ -383,6 +385,39 @@ class Api::V1::Payment3dsController < ActionController::API
 
     event_name = succeeded ? nil : GhlInboundWebhookService::PAYMENT_FAILED_EVENT
     GhlInboundWebhookWorker.perform_async(payment.id, event_name)
+  end
+
+  def sync_spreedly_payment_method!(vault_token, params)
+    attributes = spreedly_payment_method_attributes(params)
+    return if attributes.blank?
+
+    Spreedly::PaymentMethodsService.new.update_payment_method(token: vault_token, **attributes)
+  rescue Spreedly::Error => e
+    Rails.logger.warn("Failed to sync Spreedly payment method #{vault_token}: #{e.message}")
+  end
+
+  def spreedly_payment_method_attributes(params)
+    source = params.respond_to?(:to_h) ? params.to_h.deep_symbolize_keys : {}
+
+    {
+      full_name: source[:cardholder_name],
+      email: source[:billing_email],
+      phone_number: source[:billing_phone_number],
+      company: source[:billing_company],
+      address1: source[:billing_address1],
+      address2: source[:billing_address2],
+      city: source[:billing_city],
+      state: source[:billing_state],
+      zip: source[:billing_zip],
+      country: source[:billing_country],
+      shipping_address1: source[:shipping_address1],
+      shipping_address2: source[:shipping_address2],
+      shipping_city: source[:shipping_city],
+      shipping_state: source[:shipping_state],
+      shipping_zip: source[:shipping_zip],
+      shipping_country: source[:shipping_country],
+      shipping_phone_number: source[:shipping_phone_number]
+    }.compact_blank
   end
 
   def composer_workflow_key

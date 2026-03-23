@@ -245,7 +245,24 @@ class Api::V1::PaymentsController < ActionController::API
       :payment_method_id,
       :three_ds_session_id,
       :require_3ds,
-      :browser_info
+      :cardholder_name,
+      :billing_email,
+      :billing_phone_number,
+      :billing_company,
+      :billing_address1,
+      :billing_address2,
+      :billing_city,
+      :billing_state,
+      :billing_zip,
+      :billing_country,
+      :shipping_address1,
+      :shipping_address2,
+      :shipping_city,
+      :shipping_state,
+      :shipping_zip,
+      :shipping_country,
+      :shipping_phone_number,
+      browser_info: {}
     )
   end
 
@@ -261,7 +278,23 @@ class Api::V1::PaymentsController < ActionController::API
       :exp_month,
       :exp_year,
       :cardholder_name,
-      payment_method: [ :number, :cvc, :exp_month, :exp_year, :last_four, :vault_token, :card_brand, :last4, :payment_method_id ]
+      :billing_email,
+      :billing_phone_number,
+      :billing_company,
+      :billing_address1,
+      :billing_address2,
+      :billing_city,
+      :billing_state,
+      :billing_zip,
+      :billing_country,
+      :shipping_address1,
+      :shipping_address2,
+      :shipping_city,
+      :shipping_state,
+      :shipping_zip,
+      :shipping_country,
+      :shipping_phone_number,
+      payment_method: [ :number, :cvc, :exp_month, :exp_year, :last_four, :vault_token, :card_brand, :last4, :payment_method_id, :cardholder_name, :billing_email, :billing_phone_number, :billing_company, :billing_address1, :billing_address2, :billing_city, :billing_state, :billing_zip, :billing_country, :shipping_address1, :shipping_address2, :shipping_city, :shipping_state, :shipping_zip, :shipping_country, :shipping_phone_number ]
     )
   end
 
@@ -436,6 +469,8 @@ class Api::V1::PaymentsController < ActionController::API
     end
 
     if @payment_params[:vault_token].present?
+      sync_spreedly_payment_method!(@payment_params[:vault_token], @payment_params)
+
       payment_method = @user.payment_methods.new(
         vault_token: @payment_params[:vault_token],
         provider: "Spreedly Vault",
@@ -533,6 +568,40 @@ class Api::V1::PaymentsController < ActionController::API
     return transaction if transaction.is_a?(Hash)
 
     {}
+  end
+
+  def sync_spreedly_payment_method!(vault_token, params)
+    attributes = spreedly_payment_method_attributes(params)
+    return if attributes.blank?
+
+    Spreedly::PaymentMethodsService.new.update_payment_method(token: vault_token, **attributes)
+  rescue Spreedly::Error => e
+    Rails.logger.warn("Failed to sync Spreedly payment method #{vault_token}: #{e.message}")
+  end
+
+  def spreedly_payment_method_attributes(params)
+    source = params.respond_to?(:to_h) ? params.to_h.deep_symbolize_keys : {}
+    nested = source[:payment_method].is_a?(Hash) ? source[:payment_method] : {}
+
+    {
+      full_name: source[:cardholder_name].presence || nested[:cardholder_name],
+      email: source[:billing_email].presence || nested[:billing_email],
+      phone_number: source[:billing_phone_number].presence || nested[:billing_phone_number],
+      company: source[:billing_company].presence || nested[:billing_company],
+      address1: source[:billing_address1].presence || nested[:billing_address1],
+      address2: source[:billing_address2].presence || nested[:billing_address2],
+      city: source[:billing_city].presence || nested[:billing_city],
+      state: source[:billing_state].presence || nested[:billing_state],
+      zip: source[:billing_zip].presence || nested[:billing_zip],
+      country: source[:billing_country].presence || nested[:billing_country],
+      shipping_address1: source[:shipping_address1].presence || nested[:shipping_address1],
+      shipping_address2: source[:shipping_address2].presence || nested[:shipping_address2],
+      shipping_city: source[:shipping_city].presence || nested[:shipping_city],
+      shipping_state: source[:shipping_state].presence || nested[:shipping_state],
+      shipping_zip: source[:shipping_zip].presence || nested[:shipping_zip],
+      shipping_country: source[:shipping_country].presence || nested[:shipping_country],
+      shipping_phone_number: source[:shipping_phone_number].presence || nested[:shipping_phone_number]
+    }.compact_blank
   end
 
   def composer_workflow_key
