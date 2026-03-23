@@ -372,6 +372,8 @@ class Api::V1::PaymentsController < ActionController::API
       raw_response: transaction
     )
 
+    log_three_ds_event("start", transaction, payment: payment, session_id: session.id)
+
     if three_ds_terminal_state?(transaction["state"])
       apply_three_ds_transaction_result!(payment, @plan, transaction)
       return render_terminal_three_ds_response!(session, payment, transaction)
@@ -402,6 +404,8 @@ class Api::V1::PaymentsController < ActionController::API
     end
     challenge_url = tds.extract_challenge_url(transaction)
     session_status = derive_three_ds_session_status(transaction["state"], challenge_url, transaction)
+    log_three_ds_event("complete", transaction, payment: session.payment, session_id: session.id)
+
     session.update!(
       raw_response: transaction,
       status: session_status,
@@ -468,6 +472,26 @@ class Api::V1::PaymentsController < ActionController::API
 
   def three_ds_terminal_state?(state)
     Spreedly::ThreeDsService.new.terminal_state?(state)
+  end
+
+
+
+  def log_three_ds_event(stage, transaction, payment:, session_id:)
+    tx = normalize_transaction(transaction)
+    return if tx.blank?
+
+    Rails.logger.info({
+      event: "three_ds_flow",
+      stage: stage,
+      session_id: session_id,
+      payment_id: payment&.id,
+      transaction_token: tx["token"],
+      state: tx["state"],
+      fingerprint_required: Spreedly::ThreeDsService.new.fingerprint_required?(tx),
+      fingerprint_status: Spreedly::ThreeDsService.new.fingerprint_status(tx),
+      required_action: tx.dig("sca_authentication", "required_action"),
+      authentication_status_text: Spreedly::ThreeDsService.new.authentication_status_text(tx)
+    }.to_json)
   end
 
   def apply_three_ds_transaction_result!(payment, plan, transaction)
