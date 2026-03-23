@@ -344,6 +344,9 @@ class Api::V1::Payment3dsController < ActionController::API
     )
     plan.update!(status: :paid) if succeeded && payment.payment_type.to_s == "full_payment"
     plan.update!(status: :failed) unless succeeded || plan.paid?
+
+    event_name = succeeded ? nil : GhlInboundWebhookService::PAYMENT_FAILED_EVENT
+    GhlInboundWebhookWorker.perform_async(payment.id, event_name)
   end
 
   def composer_workflow_key

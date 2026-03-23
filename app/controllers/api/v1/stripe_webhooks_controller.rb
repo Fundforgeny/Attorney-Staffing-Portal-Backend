@@ -60,6 +60,7 @@ class Api::V1::StripeWebhooksController < ActionController::API
         when 'payment_intent.payment_failed'
           payment.update!(status: :failed)
           SyncDataToGhl.perform_async(payment.user.id, payment.id)
+          GhlInboundWebhookWorker.perform_async(payment.id, GhlInboundWebhookService::PAYMENT_FAILED_EVENT)
         end
         render_success(message: "PaymentIntent processed")
       else
