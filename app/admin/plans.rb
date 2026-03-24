@@ -26,6 +26,12 @@ ActiveAdmin.register Plan do
     )
   end
 
+  action_item :manual_charge, only: :show do
+    next unless resource.user&.payment_methods&.ordered_for_user&.first&.vault_token.present?
+
+    link_to("Charge Saved Card", "#manual-vault-charge")
+  end
+
   member_action :sync_with_ghl, method: :post do
     plan = Plan.find(params[:id])
 
@@ -43,6 +49,20 @@ ActiveAdmin.register Plan do
                       end
       redirect_to resource_path(plan), alert: "GHL sync failed: #{error_message}"
     end
+  end
+
+  member_action :manual_charge, method: :post do
+    plan = Plan.find(params[:id])
+
+    Admin::ManualVaultChargeService.new(
+      plan: plan,
+      amount: params[:amount],
+      description: params[:description]
+    ).call
+
+    redirect_to resource_path(plan), notice: "Manual charge submitted successfully."
+  rescue StandardError => e
+    redirect_to resource_path(plan), alert: "Manual charge failed: #{e.message}"
   end
 
   index do
@@ -164,6 +184,37 @@ ActiveAdmin.register Plan do
               end
             else
               para "No payments found for this plan."
+            end
+          end
+        end
+
+        details class: "aa-accordion-item", id: "manual-vault-charge" do
+          summary "Manual Vault Charge"
+          div class: "aa-accordion-body" do
+            saved_payment_method = user&.payment_methods&.ordered_for_user&.first
+
+            if saved_payment_method&.vault_token.present?
+              para "Charge a specific amount to the saved vaulted card on file."
+              para "Saved card: #{saved_payment_method.card_brand} ****#{saved_payment_method.last4} (#{saved_payment_method.exp_month}/#{saved_payment_method.exp_year})"
+
+              div do
+                form action: manual_charge_admin_plan_path(plan), method: :post do
+                  input type: :hidden, name: :authenticity_token, value: form_authenticity_token
+                  div do
+                    label "Amount (USD)", for: "manual_charge_amount"
+                    input id: "manual_charge_amount", type: :number, name: :amount, step: "0.01", min: "0.01", required: true
+                  end
+                  div style: "margin-top: 12px;" do
+                    label "Description", for: "manual_charge_description"
+                    input id: "manual_charge_description", type: :text, name: :description, value: "Admin manual payment"
+                  end
+                  div style: "margin-top: 12px;" do
+                    input type: :submit, value: "Charge Saved Card"
+                  end
+                end
+              end
+            else
+              para "No saved vaulted payment method found for this user."
             end
           end
         end

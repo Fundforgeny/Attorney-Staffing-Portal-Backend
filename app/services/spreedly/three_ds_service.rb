@@ -42,6 +42,7 @@ module Spreedly
       response.fetch("transaction")
     end
 
+
     # Never use top-level transaction["redirect_url"] — that is the merchant return URL we sent
     # (Spreedly echoes it). Using it as "challenge_url" breaks Lifecycle / iframe flows.
     def extract_challenge_url(transaction)
@@ -61,25 +62,70 @@ module Spreedly
 
     # Fields for browser 3DS2 Global (Lifecycle, iframe, or form POST).
     def challenge_client_fields(transaction)
-      sca = transaction["sca_authentication"]
-      sca = sca.is_a?(Hash) ? sca : {}
+      sca = sca_authentication(transaction)
       optional = {
         sca_required_action: sca["required_action"],
         challenge_form_html: sca["challenge_form"],
-        sca_authentication_token: sca["token"]
+        challenge_form_embed_url: sca["challenge_form_embed_url"],
+        sca_authentication_token: sca["token"],
+        managed_order_token: sca["managed_order_token"],
+        authentication_value: sca["authentication_value"],
+        eci: sca["eci"],
+        xid: sca["xid"],
+        directory_server_transaction_id: sca["directory_server_transaction_id"],
+        three_ds_server_trans_id: sca["three_ds_server_trans_id"],
+        three_ds_version: sca["three_ds_version"],
+        flow_performed: sca["flow_performed"],
+        trans_status_reason: sca["trans_status_reason"],
+        enrolled: sca["enrolled"],
+        authenticated: sca["authenticated"]
       }.compact
 
-      { challenge_url: extract_challenge_url(transaction) }.merge(optional)
+      {
+        challenge_url: extract_challenge_url(transaction),
+        fingerprint_required: fingerprint_required?(transaction),
+        fingerprint_status: fingerprint_status(transaction),
+        fingerprint_completed: fingerprint_completed?(transaction),
+        three_ds_lifecycle_required: pending_sca_browser_step?(transaction),
+        transaction_state: transaction["state"],
+        authentication_status_text: authentication_status_text(transaction)
+      }.merge(optional)
     end
 
     def pending_sca_browser_step?(transaction)
       return false unless transaction.is_a?(Hash)
       return false unless transaction["state"].to_s == "pending"
 
-      sca = transaction["sca_authentication"]
-      return false unless sca.is_a?(Hash)
-
+      sca = sca_authentication(transaction)
       sca["challenge_form"].present? || sca["required_action"].present?
+    end
+
+    def fingerprint_required?(transaction)
+      sca_authentication(transaction)["required_action"].to_s == "device_fingerprint"
+    end
+
+    def fingerprint_completed?(transaction)
+      pending_sca_browser_step?(transaction) && !fingerprint_required?(transaction)
+    end
+
+    def fingerprint_status(transaction)
+      return "required" if fingerprint_required?(transaction)
+      return "completed" if fingerprint_completed?(transaction)
+      return "not_applicable" unless pending_sca_browser_step?(transaction)
+
+      "not_required"
+    end
+
+    def authentication_status_text(transaction)
+      sca = sca_authentication(transaction)
+      parts = []
+      parts << "state=#{transaction["state"]}" if transaction["state"].present?
+      parts << "required_action=#{sca["required_action"]}" if sca["required_action"].present?
+      parts << "authenticated=#{sca["authenticated"]}" unless sca["authenticated"].nil?
+      parts << "enrolled=#{sca["enrolled"]}" if sca["enrolled"].present?
+      parts << "eci=#{sca["eci"]}" if sca["eci"].present?
+
+      parts.join(" ").presence
     end
 
     def terminal_state?(state)
@@ -98,7 +144,12 @@ module Spreedly
       end
       { test_scenario: test_scenario }
     end
+
+    private
+
+    def sca_authentication(transaction)
+      sca = transaction["sca_authentication"]
+      sca.is_a?(Hash) ? sca : {}
+    end
   end
 end
-
-

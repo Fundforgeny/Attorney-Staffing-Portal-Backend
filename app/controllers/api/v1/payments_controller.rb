@@ -245,7 +245,26 @@ class Api::V1::PaymentsController < ActionController::API
       :payment_method_id,
       :three_ds_session_id,
       :require_3ds,
-      :browser_info
+      :cardholder_name,
+      :billing_email,
+      :billing_phone_number,
+      :billing_company,
+      :billing_address1,
+      :billing_address2,
+      :billing_city,
+      :billing_state,
+      :billing_zip,
+      :billing_country,
+      :shipping_address1,
+      :shipping_address2,
+      :shipping_city,
+      :shipping_state,
+      :shipping_zip,
+      :shipping_country,
+      :shipping_phone_number,
+      billing_address: {},
+      shipping_address: {},
+      browser_info: {}
     )
   end
 
@@ -261,7 +280,25 @@ class Api::V1::PaymentsController < ActionController::API
       :exp_month,
       :exp_year,
       :cardholder_name,
-      payment_method: [ :number, :cvc, :exp_month, :exp_year, :last_four, :vault_token, :card_brand, :last4, :payment_method_id ]
+      :billing_email,
+      :billing_phone_number,
+      :billing_company,
+      :billing_address1,
+      :billing_address2,
+      :billing_city,
+      :billing_state,
+      :billing_zip,
+      :billing_country,
+      :shipping_address1,
+      :shipping_address2,
+      :shipping_city,
+      :shipping_state,
+      :shipping_zip,
+      :shipping_country,
+      :shipping_phone_number,
+      billing_address: {},
+      shipping_address: {},
+      payment_method: [ :number, :cvc, :exp_month, :exp_year, :last_four, :vault_token, :card_brand, :last4, :payment_method_id, :cardholder_name, :billing_email, :billing_phone_number, :billing_company, :billing_address1, :billing_address2, :billing_city, :billing_state, :billing_zip, :billing_country, :shipping_address1, :shipping_address2, :shipping_city, :shipping_state, :shipping_zip, :shipping_country, :shipping_phone_number, { billing_address: {}, shipping_address: {} } ]
     )
   end
 
@@ -372,6 +409,8 @@ class Api::V1::PaymentsController < ActionController::API
       raw_response: transaction
     )
 
+    log_three_ds_event("start", transaction, payment: payment, session_id: session.id)
+
     if three_ds_terminal_state?(transaction["state"])
       apply_three_ds_transaction_result!(payment, @plan, transaction)
       return render_terminal_three_ds_response!(session, payment, transaction)
@@ -402,6 +441,8 @@ class Api::V1::PaymentsController < ActionController::API
     end
     challenge_url = tds.extract_challenge_url(transaction)
     session_status = derive_three_ds_session_status(transaction["state"], challenge_url, transaction)
+    log_three_ds_event("complete", transaction, payment: session.payment, session_id: session.id)
+
     session.update!(
       raw_response: transaction,
       status: session_status,
@@ -431,13 +472,20 @@ class Api::V1::PaymentsController < ActionController::API
       return @user.payment_methods.find(@payment_params[:payment_method_id])
     end
 
-    if @payment_params[:vault_token].present?
-      payment_method = @user.payment_methods.new(
-        vault_token: @payment_params[:vault_token],
-        provider: "Spreedly Vault",
-        card_brand: @payment_params[:card_brand],
+    vault_token = @payment_params[:vault_token].presence || @payment_params.dig(:payment_method, :vault_token).presence
+    if vault_token.present?
+      sync_spreedly_payment_method!(vault_token, @payment_params)
+
+      payment_method = @user.payment_methods.find_or_initialize_by(vault_token: vault_token)
+      payment_method.assign_attributes(
+        provider: payment_method.provider.presence || "Spreedly Vault",
+        card_brand: @payment_params[:card_brand].presence || @payment_params.dig(:payment_method, :card_brand) || payment_method.card_brand,
+        last4: @payment_params[:last4].presence || @payment_params.dig(:payment_method, :last4) || payment_method.last4,
+        exp_month: @payment_params[:exp_month].presence || @payment_params.dig(:payment_method, :exp_month) || payment_method.exp_month,
+        exp_year: @payment_params[:exp_year].presence || @payment_params.dig(:payment_method, :exp_year) || payment_method.exp_year,
+        cardholder_name: @payment_params[:cardholder_name].presence || @payment_params.dig(:payment_method, :cardholder_name).presence || payment_method.cardholder_name,
         last_updated_via_spreedly_at: Time.current,
-        is_default: @user.payment_methods.blank?
+        is_default: payment_method.new_record? ? @user.payment_methods.blank? : payment_method.is_default
       )
       payment_method.save!
       return payment_method
@@ -470,6 +518,26 @@ class Api::V1::PaymentsController < ActionController::API
     Spreedly::ThreeDsService.new.terminal_state?(state)
   end
 
+
+
+  def log_three_ds_event(stage, transaction, payment:, session_id:)
+    tx = normalize_transaction(transaction)
+    return if tx.blank?
+
+    Rails.logger.info({
+      event: "three_ds_flow",
+      stage: stage,
+      session_id: session_id,
+      payment_id: payment&.id,
+      transaction_token: tx["token"],
+      state: tx["state"],
+      fingerprint_required: Spreedly::ThreeDsService.new.fingerprint_required?(tx),
+      fingerprint_status: Spreedly::ThreeDsService.new.fingerprint_status(tx),
+      required_action: tx.dig("sca_authentication", "required_action"),
+      authentication_status_text: Spreedly::ThreeDsService.new.authentication_status_text(tx)
+    }.to_json)
+  end
+
   def apply_three_ds_transaction_result!(payment, plan, transaction)
     tx = normalize_transaction(transaction)
     succeeded = ActiveModel::Type::Boolean.new.cast(tx["succeeded"]) || tx["state"].to_s == "succeeded"
@@ -481,6 +549,9 @@ class Api::V1::PaymentsController < ActionController::API
     )
     plan.update!(status: :paid) if succeeded && payment.payment_type.to_s == "full_payment"
     plan.update!(status: :failed) unless succeeded || plan.paid?
+
+    event_name = succeeded ? nil : GhlInboundWebhookService::PAYMENT_FAILED_EVENT
+    GhlInboundWebhookWorker.perform_async(payment.id, event_name)
   end
 
   def render_terminal_three_ds_response!(session, payment, transaction)
@@ -506,6 +577,57 @@ class Api::V1::PaymentsController < ActionController::API
     return transaction if transaction.is_a?(Hash)
 
     {}
+  end
+
+  def sync_spreedly_payment_method!(vault_token, params)
+    attributes = spreedly_payment_method_attributes(params)
+    return if attributes.blank?
+
+    Spreedly::PaymentMethodsService.new.update_payment_method(token: vault_token, **attributes)
+  rescue Spreedly::Error => e
+    Rails.logger.warn("Failed to sync Spreedly payment method #{vault_token}: #{e.message}")
+  end
+
+  def spreedly_payment_method_attributes(params)
+    source = params.respond_to?(:to_h) ? params.to_h.deep_symbolize_keys : {}
+    nested = source[:payment_method].is_a?(Hash) ? source[:payment_method] : {}
+    billing = extract_address(source, nested, :billing)
+    shipping = extract_address(source, nested, :shipping)
+
+    {
+      full_name: source[:cardholder_name].presence || nested[:cardholder_name],
+      email: source[:billing_email].presence || nested[:billing_email],
+      phone_number: source[:billing_phone_number].presence || nested[:billing_phone_number],
+      company: source[:billing_company].presence || nested[:billing_company],
+      address1: billing[:address1],
+      address2: billing[:address2],
+      city: billing[:city],
+      state: billing[:state],
+      zip: billing[:zip],
+      country: billing[:country],
+      shipping_address1: shipping[:address1],
+      shipping_address2: shipping[:address2],
+      shipping_city: shipping[:city],
+      shipping_state: shipping[:state],
+      shipping_zip: shipping[:zip],
+      shipping_country: shipping[:country],
+      shipping_phone_number: source[:shipping_phone_number].presence || nested[:shipping_phone_number].presence || shipping[:phone_number]
+    }.compact_blank
+  end
+
+  def extract_address(source, nested, prefix)
+    nested_address = nested["#{prefix}_address".to_sym].is_a?(Hash) ? nested["#{prefix}_address".to_sym] : {}
+    direct_address = source["#{prefix}_address".to_sym].is_a?(Hash) ? source["#{prefix}_address".to_sym] : {}
+
+    {
+      address1: source["#{prefix}_address1".to_sym].presence || nested["#{prefix}_address1".to_sym].presence || direct_address[:address1].presence || direct_address[:line1].presence || direct_address[:street].presence || nested_address[:address1].presence || nested_address[:line1].presence || nested_address[:street].presence,
+      address2: source["#{prefix}_address2".to_sym].presence || nested["#{prefix}_address2".to_sym].presence || direct_address[:address2].presence || direct_address[:line2].presence || nested_address[:address2].presence || nested_address[:line2].presence,
+      city: source["#{prefix}_city".to_sym].presence || nested["#{prefix}_city".to_sym].presence || direct_address[:city].presence || nested_address[:city].presence,
+      state: source["#{prefix}_state".to_sym].presence || nested["#{prefix}_state".to_sym].presence || direct_address[:state].presence || direct_address[:province].presence || direct_address[:region].presence || nested_address[:state].presence || nested_address[:province].presence || nested_address[:region].presence,
+      zip: source["#{prefix}_zip".to_sym].presence || nested["#{prefix}_zip".to_sym].presence || direct_address[:zip].presence || direct_address[:postal_code].presence || nested_address[:zip].presence || nested_address[:postal_code].presence,
+      country: source["#{prefix}_country".to_sym].presence || nested["#{prefix}_country".to_sym].presence || direct_address[:country].presence || direct_address[:country_code].presence || nested_address[:country].presence || nested_address[:country_code].presence,
+      phone_number: direct_address[:phone_number].presence || nested_address[:phone_number].presence
+    }.compact_blank
   end
 
   def composer_workflow_key

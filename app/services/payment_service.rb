@@ -37,20 +37,76 @@ class PaymentService
   end
 
   def find_or_create_tokenized_payment_method!(vault_token, params)
-    PaymentMethod.create!(
-      user: @user,
-      provider: "Spreedly Vault",
-      vault_token: vault_token,
-      card_brand: params[:card_brand].presence || params.dig(:payment_method, :card_brand),
-      cardholder_name: params[:cardholder_name].presence || "#{@user.first_name} #{@user.last_name}".strip,
-      last4: params[:last4].presence || params.dig(:payment_method, :last4),
-      exp_month: params[:exp_month].presence || params.dig(:payment_method, :exp_month),
-      exp_year: params[:exp_year].presence || params.dig(:payment_method, :exp_year),
-      is_default: @user.payment_methods.blank?
+    sync_spreedly_payment_method!(vault_token, params)
+
+    payment_method = @user.payment_methods.find_or_initialize_by(vault_token: vault_token)
+    payment_method.assign_attributes(
+      provider: payment_method.provider.presence || "Spreedly Vault",
+      card_brand: params[:card_brand].presence || params.dig(:payment_method, :card_brand) || payment_method.card_brand,
+      cardholder_name: params[:cardholder_name].presence || params.dig(:payment_method, :cardholder_name).presence || payment_method.cardholder_name.presence || "#{@user.first_name} #{@user.last_name}".strip,
+      last4: params[:last4].presence || params.dig(:payment_method, :last4) || payment_method.last4,
+      exp_month: params[:exp_month].presence || params.dig(:payment_method, :exp_month) || payment_method.exp_month,
+      exp_year: params[:exp_year].presence || params.dig(:payment_method, :exp_year) || payment_method.exp_year,
+      is_default: payment_method.new_record? ? @user.payment_methods.blank? : payment_method.is_default,
+      last_updated_via_spreedly_at: Time.current
     )
+    payment_method.save!
+    payment_method
   end
 
   # Legacy fallback for older clients that still post raw card fields.
+  def sync_spreedly_payment_method!(vault_token, params)
+    attributes = spreedly_payment_method_attributes(params)
+    return if attributes.blank?
+
+    Spreedly::PaymentMethodsService.new.update_payment_method(token: vault_token, **attributes)
+  rescue Spreedly::Error => e
+    Rails.logger.warn("Failed to sync Spreedly payment method #{vault_token}: #{e.message}")
+  end
+
+  def spreedly_payment_method_attributes(params)
+    payment_method = params[:payment_method].is_a?(Hash) ? params[:payment_method] : {}
+    billing = extract_address(params, payment_method, :billing)
+    shipping = extract_address(params, payment_method, :shipping)
+
+    {
+      full_name: params[:cardholder_name].presence || payment_method[:cardholder_name].presence || "#{@user.first_name} #{@user.last_name}".strip.presence,
+      first_name: params[:first_name].presence || payment_method[:first_name].presence || @user.first_name,
+      last_name: params[:last_name].presence || payment_method[:last_name].presence || @user.last_name,
+      email: params[:billing_email].presence || payment_method[:billing_email].presence || @user.email,
+      phone_number: params[:billing_phone_number].presence || payment_method[:billing_phone_number].presence,
+      company: params[:billing_company].presence || payment_method[:billing_company].presence,
+      address1: billing[:address1],
+      address2: billing[:address2],
+      city: billing[:city],
+      state: billing[:state],
+      zip: billing[:zip],
+      country: billing[:country],
+      shipping_address1: shipping[:address1],
+      shipping_address2: shipping[:address2],
+      shipping_city: shipping[:city],
+      shipping_state: shipping[:state],
+      shipping_zip: shipping[:zip],
+      shipping_country: shipping[:country],
+      shipping_phone_number: params[:shipping_phone_number].presence || payment_method[:shipping_phone_number].presence || shipping[:phone_number]
+    }.compact_blank
+  end
+
+  def extract_address(params, payment_method, prefix)
+    direct_address = params["#{prefix}_address".to_sym].is_a?(Hash) ? params["#{prefix}_address".to_sym] : {}
+    nested_address = payment_method["#{prefix}_address".to_sym].is_a?(Hash) ? payment_method["#{prefix}_address".to_sym] : {}
+
+    {
+      address1: params["#{prefix}_address1".to_sym].presence || payment_method["#{prefix}_address1".to_sym].presence || params[:address1].presence || payment_method[:address1].presence || direct_address[:address1].presence || direct_address[:line1].presence || direct_address[:street].presence || nested_address[:address1].presence || nested_address[:line1].presence || nested_address[:street].presence,
+      address2: params["#{prefix}_address2".to_sym].presence || payment_method["#{prefix}_address2".to_sym].presence || params[:address2].presence || payment_method[:address2].presence || direct_address[:address2].presence || direct_address[:line2].presence || nested_address[:address2].presence || nested_address[:line2].presence,
+      city: params["#{prefix}_city".to_sym].presence || payment_method["#{prefix}_city".to_sym].presence || params[:city].presence || payment_method[:city].presence || direct_address[:city].presence || nested_address[:city].presence,
+      state: params["#{prefix}_state".to_sym].presence || payment_method["#{prefix}_state".to_sym].presence || params[:state].presence || payment_method[:state].presence || direct_address[:state].presence || direct_address[:province].presence || direct_address[:region].presence || nested_address[:state].presence || nested_address[:province].presence || nested_address[:region].presence,
+      zip: params["#{prefix}_zip".to_sym].presence || payment_method["#{prefix}_zip".to_sym].presence || params[:zip].presence || payment_method[:zip].presence || direct_address[:zip].presence || direct_address[:postal_code].presence || nested_address[:zip].presence || nested_address[:postal_code].presence,
+      country: params["#{prefix}_country".to_sym].presence || payment_method["#{prefix}_country".to_sym].presence || params[:country].presence || payment_method[:country].presence || direct_address[:country].presence || direct_address[:country_code].presence || nested_address[:country].presence || nested_address[:country_code].presence,
+      phone_number: direct_address[:phone_number].presence || nested_address[:phone_number].presence
+    }.compact_blank
+  end
+
   def store_legacy_card_details(legacy_params)
     PaymentMethod.create!(
       user: @user,
@@ -139,7 +195,7 @@ class PaymentService
   end
 
   def normalized_payment_params
-    raw = @payment_params.respond_to?(:to_h) ? @payment_params.to_h : {}
+    raw = @payment_params.respond_to?(:to_h) ? @payment_params.to_h : (@payment_params.is_a?(Hash) ? @payment_params : {})
     raw.deep_symbolize_keys
   rescue StandardError
     {}
