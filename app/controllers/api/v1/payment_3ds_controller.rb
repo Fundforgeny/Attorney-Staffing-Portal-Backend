@@ -143,7 +143,11 @@ class Api::V1::Payment3dsController < ActionController::API
       update_payment_from_transaction!(payment, plan, raw_transaction)
       if raw_transaction["state"].to_s == "succeeded"
         render_success(
-          data: { checkout_completed: true, three_ds_required: false },
+          data: {
+            checkout_completed: true,
+            checkout_pending: false,
+            three_ds_required: false
+          },
           message: "Payment completed successfully",
           status: :ok
         )
@@ -158,6 +162,8 @@ class Api::V1::Payment3dsController < ActionController::API
         data: {
           transaction_token: raw_transaction["token"],
           three_ds_required: true,
+          checkout_completed: false,
+          checkout_pending: true,
           session_id: session.id,
           status: session_status
         }.merge(tds.challenge_client_fields(raw_transaction)),
@@ -195,6 +201,8 @@ class Api::V1::Payment3dsController < ActionController::API
         data: {
           status: session.status,
           three_ds_required: true,
+          checkout_completed: false,
+          checkout_pending: true,
           session_id: session.id,
           transaction_token: session.spreedly_transaction_token
         }.merge(tds.challenge_client_fields(transaction)),
@@ -208,7 +216,11 @@ class Api::V1::Payment3dsController < ActionController::API
 
     if succeeded
       render_success(
-        data: { checkout_completed: true, three_ds_required: false },
+        data: {
+          checkout_completed: true,
+          checkout_pending: false,
+          three_ds_required: false
+        },
         message: "Payment completed successfully",
         status: :ok
       )
