@@ -3,6 +3,7 @@ Rails.application.config.middleware.insert_before 0, Rack::Cors do
     origins 'https://attorney-staffing-portal-frontend.onrender.com',
             'https://attorney-staffing-portal-backend-1.onrender.com',
             'https://payments.fundforge.net',
+            'https://pay.fundforge.net',
             'http://localhost:5173',
             'http://127.0.0.1:5173'
 
