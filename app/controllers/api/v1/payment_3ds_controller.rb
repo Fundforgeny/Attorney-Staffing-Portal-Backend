@@ -124,7 +124,7 @@ class Api::V1::Payment3dsController < ActionController::API
       callback_url: callback_url,
       redirect_url: redirect_url,
       workflow_key: composer_workflow_key,
-      browser_info: start_checkout_params[:browser_info],
+      browser_info: parse_browser_info(start_checkout_params[:browser_info]),
       sca_provider_key: sca_provider_key,
       ip: request.remote_ip
     )
@@ -440,5 +440,17 @@ class Api::V1::Payment3dsController < ActionController::API
 
   def composer_workflow_key
     ENV["SPREEDLY_WORKFLOW_KEY"].presence || ENV["SPREEDLY_COMPOSER_WORKFLOW_KEY"].presence
+  end
+
+  # Spreedly.ThreeDS.serialize() returns a JSON string on the frontend.
+  # Rails strong params strips browser_info if it arrives as a string instead of a nested hash.
+  # This helper safely parses the value regardless of whether it arrives as a String or Hash.
+  def parse_browser_info(value)
+    return nil if value.blank?
+    return value if value.is_a?(Hash)
+    return value.to_unsafe_h if value.respond_to?(:to_unsafe_h)
+    JSON.parse(value)
+  rescue JSON::ParserError
+    nil
   end
 end
