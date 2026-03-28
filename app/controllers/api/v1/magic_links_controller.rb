@@ -114,8 +114,14 @@ class Api::V1::MagicLinksController < ActionController::API
     render_success(
       data: {
         user_id: user.id,
-        name: user.first_name + " " + user.last_name,
+        name: user.full_name,
         email: user.email,
+        phone: user.phone,
+        billing_address1: user.address_street,
+        billing_city: user.city,
+        billing_state: user.state,
+        billing_zip: user.postal_code,
+        billing_country: user.country.presence || "United States",
         plan_id: plan.id,
         checkout_session_id: plan.checkout_session_id,
         token: token,

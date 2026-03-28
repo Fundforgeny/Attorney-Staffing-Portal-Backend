@@ -177,12 +177,26 @@ class Api::V1::PlansController < ActionController::API
 
   def find_or_create_user!(email)
     user = User.find_or_initialize_by(email: email)
+    name_param = normalized_create_params[:name].to_s.strip
     if user.new_record?
-      user.first_name = "Checkout"
-      user.last_name = "User"
+      if name_param.present?
+        parts = name_param.split(" ", 2)
+        user.first_name = parts[0].presence || "Checkout"
+        user.last_name  = parts[1].presence || ""
+      else
+        user.first_name = "Checkout"
+        user.last_name  = "User"
+      end
       user.user_type = :client
       user.skip_confirmation!
       user.save!
+    elsif name_param.present? && user.first_name.in?([nil, "", "Checkout"])
+      # Update placeholder name with real name when provided
+      parts = name_param.split(" ", 2)
+      user.update_columns(
+        first_name: parts[0].presence || user.first_name,
+        last_name:  parts[1].presence || user.last_name
+      )
     end
     user
   end
@@ -217,10 +231,15 @@ class Api::V1::PlansController < ActionController::API
 
   def serialized_plan(plan)
     agreement = plan.agreement
+    user = plan.user
     {
       id: plan.id,
       plan_id: plan.id,
       user_id: plan.user_id,
+      customer_name: user&.full_name,
+      email: user&.email,
+      phone: user&.phone,
+      plan_name: plan.name,
       name: plan.name,
       checkout_session_id: plan.checkout_session_id,
       status: plan.status,
@@ -229,6 +248,9 @@ class Api::V1::PlansController < ActionController::API
       months: plan.duration,
       next_payment_at: plan.next_payment_at,
       agreement_id: agreement&.id,
+      agreement_content: nil,
+      fund_forge_agreement_url: agreement&.pdf&.attached? ? agreement.pdf.url : nil,
+      engagement_agreement_url: agreement&.engagement_pdf&.attached? ? agreement.engagement_pdf.url : nil,
       fund_forge_agreement: serialized_attachment(agreement&.pdf),
       engagement_agreement: serialized_attachment(agreement&.engagement_pdf),
       installments: plan.payments.order(:scheduled_at).map do |payment|
