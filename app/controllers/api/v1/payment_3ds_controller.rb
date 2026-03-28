@@ -27,6 +27,7 @@ class Api::V1::Payment3dsController < ActionController::API
       callback_url: callback_url,
       redirect_url: redirect_url,
       workflow_key: composer_workflow_key,
+      gateway_token: direct_gateway_token,
       browser_info: start_params[:browser_info],
       sca_provider_key: sca_provider_key,
       ip: request.remote_ip
@@ -124,6 +125,7 @@ class Api::V1::Payment3dsController < ActionController::API
       callback_url: callback_url,
       redirect_url: redirect_url,
       workflow_key: composer_workflow_key,
+      gateway_token: direct_gateway_token,
       browser_info: parse_browser_info(start_checkout_params[:browser_info]),
       sca_provider_key: sca_provider_key,
       ip: request.remote_ip
@@ -440,6 +442,15 @@ class Api::V1::Payment3dsController < ActionController::API
 
   def composer_workflow_key
     ENV["SPREEDLY_WORKFLOW_KEY"].presence || ENV["SPREEDLY_COMPOSER_WORKFLOW_KEY"].presence
+  end
+
+  # Direct gateway token — used when Composer workflow is not available or misconfigured.
+  # Set SPREEDLY_DIRECT_GATEWAY_TOKEN to bypass Composer and route directly to a specific gateway.
+  # When Spreedly Protect is enabled and Composer is fixed, clear this env var to re-enable Composer.
+  def direct_gateway_token
+    # Only use direct gateway if workflow_key is absent (Composer not configured)
+    return nil if composer_workflow_key.present?
+    ENV["SPREEDLY_DIRECT_GATEWAY_TOKEN"].presence
   end
 
   # Spreedly.ThreeDS.serialize() returns a JSON string on the frontend.

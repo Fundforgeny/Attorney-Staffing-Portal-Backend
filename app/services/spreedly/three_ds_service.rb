@@ -4,7 +4,7 @@ module Spreedly
       @client = client
     end
 
-    def initiate_purchase(payment_method_token:, amount_cents:, currency: "USD", callback_url:, redirect_url:, workflow_key: nil, browser_info: nil, sca_provider_key: nil, ip: nil)
+    def initiate_purchase(payment_method_token:, amount_cents:, currency: "USD", callback_url:, redirect_url:, workflow_key: nil, gateway_token: nil, browser_info: nil, sca_provider_key: nil, ip: nil)
       payload = {
         transaction: {
           payment_method_token: payment_method_token,
@@ -17,7 +17,12 @@ module Spreedly
         }
       }
       payload[:transaction][:ip] = ip if ip.present?
-      payload[:transaction][:workflow_key] = workflow_key if workflow_key.present?
+      # Use workflow_key for Composer routing, or gateway_token for direct gateway (bypasses Composer)
+      if workflow_key.present?
+        payload[:transaction][:workflow_key] = workflow_key
+      elsif gateway_token.present?
+        payload[:transaction][:gateway_token] = gateway_token
+      end
 
       # 3DS2 Global: use sca_provider_key (mutually exclusive with attempt_3dsecure)
       if sca_provider_key.present?
