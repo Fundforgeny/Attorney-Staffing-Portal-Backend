@@ -1,10 +1,11 @@
 class GhlInboundWebhookService
   # Payment event webhook — separate from the login/magic-link webhook in GhlWebhookService
   STATIC_WEBHOOK_URL = "https://services.leadconnectorhq.com/hooks/ypwiHcCIbSqZMzXzrIhd/webhook-trigger/d3d0e182-2544-4601-8ab5-636e9663c2f8".freeze
-  PAYMENT_SUCCESSFUL_EVENT = "payment successful".freeze
-  PAYMENT_FAILED_EVENT = "payment failed".freeze
-  PAYMENT_PLAN_CREATED_EVENT      = "payment plan created".freeze
-  SEVEN_DAY_REMINDER_EVENT        = "7 day reminder".freeze
+  PAYMENT_SUCCESSFUL_EVENT             = "payment successful".freeze
+  INSTALLMENT_PAYMENT_SUCCESSFUL_EVENT = "installment payment successful".freeze
+  PAYMENT_FAILED_EVENT                 = "payment failed".freeze
+  PAYMENT_PLAN_CREATED_EVENT           = "payment plan created".freeze
+  SEVEN_DAY_REMINDER_EVENT             = "7 day reminder".freeze
   TWENTY_FOUR_HOUR_REMINDER_EVENT = "24 hour reminder".freeze
   THIRTY_DAYS_LATE_EVENT          = "30 days late".freeze
   CHARGEBACK_EVENT                = "chargeback".freeze
@@ -40,8 +41,15 @@ class GhlInboundWebhookService
     STATIC_WEBHOOK_URL
   end
 
+  # Returns the appropriate event trigger for a given payment:
+  # - PAYMENT_FAILED_EVENT for failed payments
+  # - INSTALLMENT_PAYMENT_SUCCESSFUL_EVENT for recurring scheduled installments on an existing plan
+  # - PAYMENT_SUCCESSFUL_EVENT for all other successful payments (early payoffs, lump sums, etc.)
   def self.default_event_for_payment(payment)
-    payment&.failed? ? PAYMENT_FAILED_EVENT : PAYMENT_SUCCESSFUL_EVENT
+    return PAYMENT_FAILED_EVENT if payment&.failed?
+    return INSTALLMENT_PAYMENT_SUCCESSFUL_EVENT if payment&.monthly_payment?
+
+    PAYMENT_SUCCESSFUL_EVENT
   end
 
   def self.plan_created_event
