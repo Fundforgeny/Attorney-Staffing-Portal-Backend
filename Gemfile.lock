@@ -515,10 +515,10 @@ GEM
       rack (>= 3.2.0)
       redis-client (>= 0.26.0)
     cronex (0.15.0)
-      tzinfo
-      unicode
+      tzinfo (>= 0)
+      unicode (>= 0.4.4.5)
     et-orbi (1.4.0)
-      tzinfo
+      tzinfo (>= 0)
     fugit (1.12.1)
       et-orbi (~> 1.4)
       raabro (~> 1.4)
