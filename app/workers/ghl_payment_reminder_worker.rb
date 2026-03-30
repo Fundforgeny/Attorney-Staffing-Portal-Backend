@@ -19,8 +19,19 @@ class GhlPaymentReminderWorker
   TWENTY_FOUR_HOUR_WINDOW_DAYS = 1
   THIRTY_DAYS_LATE_DAYS    = 30
 
+  SEND_WINDOW_START_HOUR = 14  # 2:00 PM EST
+  SEND_WINDOW_END_HOUR   = 15  # 3:00 PM EST (exclusive)
+  SEND_WINDOW_TIMEZONE   = "Eastern Time (US & Canada)"
+
   # Called by cron — scans all active plans and fires the appropriate reminder events.
+  # All events in this worker are billing notifications and must only fire between 2–3 PM EST.
   def perform(event_type = "all")
+    unless within_send_window?
+      current_est = Time.current.in_time_zone(SEND_WINDOW_TIMEZONE)
+      Rails.logger.info("[GHL Reminder Worker] Outside 2–3 PM EST send window (current: #{current_est.strftime('%H:%M %Z')}), skipping event_type=#{event_type}")
+      return :outside_send_window
+    end
+
     webhook_url = GhlInboundWebhookService.resolve_webhook_url
     if webhook_url.blank?
       Rails.logger.warn("[GHL Reminder Worker] Missing webhook URL, skipping")
@@ -145,5 +156,11 @@ class GhlPaymentReminderWorker
     return false if due.nil?
 
     due.to_date < Time.current.to_date
+  end
+
+  # Returns true only when the current EST time is between 2:00 PM and 2:59 PM.
+  def within_send_window?
+    now_est = Time.current.in_time_zone(SEND_WINDOW_TIMEZONE)
+    now_est.hour >= SEND_WINDOW_START_HOUR && now_est.hour < SEND_WINDOW_END_HOUR
   end
 end

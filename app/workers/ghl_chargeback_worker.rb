@@ -8,7 +8,19 @@
 class GhlChargebackWorker
   include Sidekiq::Worker
 
+  SEND_WINDOW_START_HOUR = 14  # 2:00 PM EST
+  SEND_WINDOW_END_HOUR   = 15  # 3:00 PM EST (exclusive)
+  SEND_WINDOW_TIMEZONE   = "Eastern Time (US & Canada)"
+
   def perform(plan_id)
+    unless within_send_window?
+      current_est = Time.current.in_time_zone(SEND_WINDOW_TIMEZONE)
+      Rails.logger.info("[GHL Chargeback Worker] Outside 2–3 PM EST send window (current: #{current_est.strftime('%H:%M %Z')}), rescheduling plan_id=#{plan_id}")
+      next_window = next_send_window_at
+      self.class.perform_at(next_window, plan_id)
+      return :rescheduled
+    end
+
     plan = Plan.find(plan_id)
     user = plan.user
     agreement = plan.agreement
@@ -66,5 +78,19 @@ class GhlChargebackWorker
   rescue StandardError => e
     Rails.logger.warn("[GHL Chargeback Worker] Could not generate magic link for user_id=#{user.id}: #{e.message}")
     nil
+  end
+
+  # Returns true only when the current EST time is between 2:00 PM and 2:59 PM.
+  def within_send_window?
+    now_est = Time.current.in_time_zone(SEND_WINDOW_TIMEZONE)
+    now_est.hour >= SEND_WINDOW_START_HOUR && now_est.hour < SEND_WINDOW_END_HOUR
+  end
+
+  # Returns the next 2:00 PM EST time (today if before 2 PM, tomorrow if after 2 PM).
+  def next_send_window_at
+    now_est = Time.current.in_time_zone(SEND_WINDOW_TIMEZONE)
+    target  = now_est.change(hour: SEND_WINDOW_START_HOUR, min: 0, sec: 0)
+    target  = target + 1.day if now_est >= target
+    target.utc
   end
 end

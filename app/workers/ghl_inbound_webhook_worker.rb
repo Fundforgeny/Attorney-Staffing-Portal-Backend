@@ -1,15 +1,37 @@
 class GhlInboundWebhookWorker
   include Sidekiq::Worker
 
+  # Billing notification events that must only fire between 2–3 PM EST.
+  # Transactional events (payment_plan_created, payment_successful) fire immediately.
+  BILLING_NOTIFICATION_EVENTS = [
+    GhlInboundWebhookService::INSTALLMENT_PAYMENT_SUCCESSFUL_EVENT,
+    GhlInboundWebhookService::PAYMENT_FAILED_EVENT
+  ].freeze
+
+  SEND_WINDOW_START_HOUR = 14  # 2:00 PM EST
+  SEND_WINDOW_END_HOUR   = 15  # 3:00 PM EST (exclusive)
+  SEND_WINDOW_TIMEZONE   = "Eastern Time (US & Canada)"
+
   def perform(payment_id, event_name = nil, _request_headers = nil)
     payment = Payment.find(payment_id)
-    plan = payment.plan
-    user = payment.user
+    plan    = payment.plan
+    user    = payment.user
+
+    # Determine the event name early so we can check whether time-gating applies.
+    resolved_event = event_name.presence || GhlInboundWebhookService.default_event_for_payment(payment)
 
     # Guard: only fire if the contact exists in our database (has email or phone)
     unless user.email.present? || user.phone.present?
       Rails.logger.warn("[GHL Payment Webhook Worker] Skipping — user has no email or phone, user_id=#{user.id}")
       return :no_contact_identity
+    end
+
+    # Time-gate: billing notification events must only fire between 2–3 PM EST.
+    if BILLING_NOTIFICATION_EVENTS.include?(resolved_event) && !within_send_window?
+      current_est = Time.current.in_time_zone(SEND_WINDOW_TIMEZONE)
+      Rails.logger.info("[GHL Payment Webhook Worker] Outside 2–3 PM EST send window (current: #{current_est.strftime('%H:%M %Z')}), rescheduling payment_id=#{payment_id} event=#{resolved_event}")
+      self.class.perform_at(next_send_window_at, payment_id, resolved_event)
+      return :rescheduled
     end
 
     webhook_url = GhlInboundWebhookService.resolve_webhook_url
@@ -19,13 +41,13 @@ class GhlInboundWebhookWorker
     end
 
     GhlInboundWebhookService.new(webhook_url).call(
-      payload_for(payment: payment, plan: plan, event_name: event_name),
+      payload_for(payment: payment, plan: plan, event_name: resolved_event),
       context: {
         worker: self.class.name,
         payment_id: payment.id,
         plan_id: plan.id,
         user_id: payment.user_id,
-        event_name: event_name
+        event_name: resolved_event
       }
     )
   end
@@ -89,6 +111,20 @@ class GhlInboundWebhookWorker
 
   def resolve_firm_name(user)
     user.firms.where.not(name: "Fund Forge").pick(:name) || user.firm&.name || user.firms.pick(:name) || "NA"
+  end
+
+  # Returns true only when the current EST time is between 2:00 PM and 2:59 PM.
+  def within_send_window?
+    now_est = Time.current.in_time_zone(SEND_WINDOW_TIMEZONE)
+    now_est.hour >= SEND_WINDOW_START_HOUR && now_est.hour < SEND_WINDOW_END_HOUR
+  end
+
+  # Returns the next 2:00 PM EST time (today if before 2 PM, tomorrow if after 2 PM).
+  def next_send_window_at
+    now_est = Time.current.in_time_zone(SEND_WINDOW_TIMEZONE)
+    target  = now_est.change(hour: SEND_WINDOW_START_HOUR, min: 0, sec: 0)
+    target  = target + 1.day if now_est >= target
+    target.utc
   end
 
   # Returns true if the next payment due date has passed by at least 1 day (even 1 day late = overdue)

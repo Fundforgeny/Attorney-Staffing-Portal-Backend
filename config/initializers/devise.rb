@@ -339,6 +339,7 @@ Devise.setup do |config|
       user: [ :json ]
     }
 
-    jwt.expiration_time = 1.day.to_i
+    # Magic link sessions last 60 minutes; magic link tokens themselves expire in 15 minutes (LoginLinkToken::EXPIRATION_WINDOW).
+    jwt.expiration_time = 60.minutes.to_i
   end
 end
