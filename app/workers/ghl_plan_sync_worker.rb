@@ -34,6 +34,7 @@ class GhlPlanSyncWorker
       overdue: "paying",
       next_payment_date: next_payment_due&.in_time_zone&.strftime("%m/%d/%Y") || "NA",
       next_payment_due: next_payment_due&.in_time_zone&.iso8601,
+      last_paid: plan.payments.succeeded.order(paid_at: :desc).first&.paid_at&.in_time_zone&.iso8601,
       financing_agreement_url: agreement&.pdf&.attached? ? agreement.pdf.url : nil,
       engagement_letter_url: agreement&.engagement_pdf&.attached? ? agreement.engagement_pdf.url : nil
     }
