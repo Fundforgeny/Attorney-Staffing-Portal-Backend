@@ -24,15 +24,14 @@ module Spreedly
         payload[:transaction][:gateway_token] = gateway_token
       end
 
-      # 3DS2 Global: use sca_provider_key (mutually exclusive with attempt_3dsecure)
+      # 3DS2 Global: use sca_provider_key when configured.
+      # When sca_provider_key is absent, process as a plain payment with no 3DS.
       if sca_provider_key.present?
         payload[:transaction][:sca_provider_key] = sca_provider_key
         payload[:transaction][:browser_info] = browser_info if browser_info.present?
         if (test_params = test_sca_authentication_parameters).present?
           payload[:transaction][:sca_authentication_parameters] = test_params
         end
-      else
-        payload[:transaction][:attempt_3dsecure] = true
       end
 
       response = @client.post(
