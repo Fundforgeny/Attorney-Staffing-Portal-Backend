@@ -36,27 +36,28 @@ class GhlInboundWebhookWorker
     is_overdue = plan_overdue?(plan)
 
     {
-      email: user.email,
-      first_name: user.first_name,
-      last_name: user.last_name,
-      payment_type: normalized_payment_type(plan, payment),
+      email:          user.email.presence || "NA",
+      first_name:     user.first_name.presence || "NA",
+      last_name:      user.last_name.presence || "NA",
+      phone:          user.phone.presence || "NA",
+      payment_type:   normalized_payment_type(plan, payment),
       payment_status: status,
-      status: status,
-      trigger: status,
-      firm_name: resolve_firm_name(user),
-      firm_slug: resolve_firm_slug(user),
-      down_payment: plan.down_payment.to_d,
-      payment_amount: payment.total_payment_including_fee || payment.payment_amount,
-      installment_amount: plan.monthly_payment.to_d,
-      total_amount: total_amount,
-      remaining_balance: plan.remaining_balance_logic,
-      overdue: is_overdue ? "overdue" : "paying",
+      status:         status,
+      trigger:        status,
+      firm_name:      resolve_firm_name(user),
+      firm_slug:      resolve_firm_slug(user),
+      down_payment:        plan.down_payment.to_d,
+      payment_amount:      payment.total_payment_including_fee.presence || payment.payment_amount.to_d,
+      installment_amount:  plan.monthly_payment.to_d,
+      total_amount:        total_amount,
+      remaining_balance:   plan.remaining_balance_logic.to_d,
+      overdue:        is_overdue ? "overdue" : "paying",
       next_payment_date: next_payment_due&.in_time_zone&.strftime("%m/%d/%Y") || "NA",
-      next_payment_due: next_payment_due&.in_time_zone&.iso8601,
-      last_paid: payment.paid_at&.in_time_zone&.iso8601,
-      date_processed: payment.paid_at&.in_time_zone&.iso8601 || Time.current.iso8601,
-      financing_agreement_url: agreement&.pdf&.attached? ? agreement.pdf.url : nil,
-      engagement_letter_url: agreement&.engagement_pdf&.attached? ? agreement.engagement_pdf.url : nil
+      next_payment_due:  next_payment_due&.in_time_zone&.iso8601 || "NA",
+      last_paid:         payment.paid_at&.in_time_zone&.iso8601 || "NA",
+      date_processed:    payment.paid_at&.in_time_zone&.iso8601 || Time.current.iso8601,
+      financing_agreement_url: agreement&.pdf&.attached? ? agreement.pdf.url : "NA",
+      engagement_letter_url:   agreement&.engagement_pdf&.attached? ? agreement.engagement_pdf.url : "NA"
     }
   end
 

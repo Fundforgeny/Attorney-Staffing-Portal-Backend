@@ -1,5 +1,12 @@
 class GhlInboundWebhookService
-  # Payment event webhook — separate from the login/magic-link webhook in GhlWebhookService
+  # Payment event webhook — separate from the login/magic-link webhook in GhlWebhookService.
+  #
+  # RULE: Every field listed in NUMERIC_FIELDS, TEXT_FIELDS, and DATE_FIELDS MUST be
+  # populated on EVERY webhook call, regardless of which event is firing.
+  # GHL uses the full payload to update the contact record on every trigger —
+  # missing fields will leave stale or blank data in GHL.
+  # Workers must never omit, skip, or conditionally exclude any field.
+  # If a value is genuinely unavailable, use 0 for numeric, "NA" for text/date.
   STATIC_WEBHOOK_URL = "https://services.leadconnectorhq.com/hooks/ypwiHcCIbSqZMzXzrIhd/webhook-trigger/d3d0e182-2544-4601-8ab5-636e9663c2f8".freeze
   PAYMENT_SUCCESSFUL_EVENT             = "payment successful".freeze
   INSTALLMENT_PAYMENT_SUCCESSFUL_EVENT = "installment payment successful".freeze
@@ -22,12 +29,15 @@ class GhlInboundWebhookService
     email
     first_name
     last_name
+    phone
     payment_type
     payment_status
     status
     trigger
     firm_name
     firm_slug
+    overdue
+    next_payment_date
     financing_agreement_url
     engagement_letter_url
   ].freeze

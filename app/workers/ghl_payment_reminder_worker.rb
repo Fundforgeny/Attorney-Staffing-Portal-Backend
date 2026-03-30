@@ -94,27 +94,28 @@ class GhlPaymentReminderWorker
     last_payment = plan.payments.succeeded.order(paid_at: :desc).first
 
     payload = {
-      email:          user.email,
-      first_name:     user.first_name,
-      last_name:      user.last_name,
+      email:          user.email.presence || "NA",
+      first_name:     user.first_name.presence || "NA",
+      last_name:      user.last_name.presence || "NA",
+      phone:          user.phone.presence || "NA",
       payment_type:   plan.payment_plan_selected? ? "Payment Plan" : "Paid in full(PIF)",
       payment_status: event_name,
       status:         event_name,
       trigger:        event_name,
       firm_name:      resolve_firm_name(user),
       firm_slug:      resolve_firm_slug(user),
-      down_payment:   plan.down_payment.to_d,
-      payment_amount: last_payment&.total_payment_including_fee || last_payment&.payment_amount || 0,
-      installment_amount: plan.monthly_payment.to_d,
-      total_amount:   total_amount,
-      remaining_balance: plan.remaining_balance_logic,
+      down_payment:        plan.down_payment.to_d,
+      payment_amount:      last_payment&.total_payment_including_fee.to_d || last_payment&.payment_amount.to_d || 0,
+      installment_amount:  plan.monthly_payment.to_d,
+      total_amount:        total_amount,
+      remaining_balance:   plan.remaining_balance_logic.to_d,
       overdue:        plan_overdue?(plan) ? "overdue" : "paying",
       next_payment_date: next_due&.in_time_zone&.strftime("%m/%d/%Y") || "NA",
-      next_payment_due:  next_due&.in_time_zone&.iso8601,
-      last_paid:         last_payment&.paid_at&.in_time_zone&.iso8601,
+      next_payment_due:  next_due&.in_time_zone&.iso8601 || "NA",
+      last_paid:         last_payment&.paid_at&.in_time_zone&.iso8601 || "NA",
       date_processed:    Time.current.iso8601,
-      financing_agreement_url:  agreement&.pdf&.attached? ? agreement.pdf.url : nil,
-      engagement_letter_url:    agreement&.engagement_pdf&.attached? ? agreement.engagement_pdf.url : nil
+      financing_agreement_url:  agreement&.pdf&.attached? ? agreement.pdf.url : "NA",
+      engagement_letter_url:    agreement&.engagement_pdf&.attached? ? agreement.engagement_pdf.url : "NA"
     }
 
     GhlInboundWebhookService.new(webhook_url).call(
