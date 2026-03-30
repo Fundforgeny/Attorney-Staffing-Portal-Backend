@@ -27,6 +27,7 @@ class GhlInboundWebhookService
     status
     trigger
     firm_name
+    firm_slug
     financing_agreement_url
     engagement_letter_url
   ].freeze

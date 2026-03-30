@@ -33,6 +33,7 @@ class GhlChargebackWorker
       status:         event_name,
       trigger:        event_name,
       firm_name:      resolve_firm_name(user),
+      firm_slug:      resolve_firm_slug(user),
       down_payment:   plan.down_payment.to_d,
       payment_amount: last_payment&.total_payment_including_fee || last_payment&.payment_amount || 0,
       installment_amount: plan.monthly_payment.to_d,
@@ -56,5 +57,10 @@ class GhlChargebackWorker
 
   def resolve_firm_name(user)
     user.firms.where.not(name: "Fund Forge").pick(:name) || user.firm&.name || user.firms.pick(:name) || "NA"
+  end
+
+  def resolve_firm_slug(user)
+    name = resolve_firm_name(user)
+    name.downcase.gsub(/[^a-z0-9]+/, "_").gsub(/^_|_$/, "")
   end
 end

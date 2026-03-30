@@ -26,6 +26,7 @@ class GhlPlanSyncWorker
       status: status,
       trigger: status,
       firm_name: user.firms.where.not(name: "Fund Forge").pick(:name) || user.firm&.name || user.firms.pick(:name) || "NA",
+      firm_slug: (user.firms.where.not(name: "Fund Forge").pick(:name) || user.firm&.name || user.firms.pick(:name) || "NA").downcase.gsub(/[^a-z0-9]+/, "_").gsub(/^_|_$/, ""),
       down_payment: plan.down_payment.to_d,
       payment_amount: payment_amount,
       installment_amount: plan.monthly_payment.to_d,

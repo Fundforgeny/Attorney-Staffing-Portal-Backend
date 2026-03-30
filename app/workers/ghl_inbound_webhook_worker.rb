@@ -44,6 +44,7 @@ class GhlInboundWebhookWorker
       status: status,
       trigger: status,
       firm_name: resolve_firm_name(user),
+      firm_slug: resolve_firm_slug(user),
       down_payment: plan.down_payment.to_d,
       payment_amount: payment.total_payment_including_fee || payment.payment_amount,
       installment_amount: plan.monthly_payment.to_d,
@@ -67,6 +68,11 @@ class GhlInboundWebhookWorker
 
   def resolve_firm_name(user)
     user.firms.where.not(name: "Fund Forge").pick(:name) || user.firm&.name || user.firms.pick(:name) || "NA"
+  end
+
+  def resolve_firm_slug(user)
+    name = resolve_firm_name(user)
+    name.downcase.gsub(/[^a-z0-9]+/, "_").gsub(/^_|_$/, "")
   end
 
   # Returns true if the next payment due date has passed by at least 1 day (even 1 day late = overdue)
