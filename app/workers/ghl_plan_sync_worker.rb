@@ -28,8 +28,11 @@ class GhlPlanSyncWorker
       firm_name: user.firms.where.not(name: "Fund Forge").pick(:name) || user.firm&.name || user.firms.pick(:name) || "NA",
       down_payment: plan.down_payment.to_d,
       payment_amount: payment_amount,
+      installment_amount: plan.monthly_payment.to_d,
       total_amount: total_amount,
       remaining_balance: plan.remaining_balance_logic,
+      overdue: "paying",
+      next_payment_date: next_payment_due&.in_time_zone&.strftime("%m/%d/%Y") || "NA",
       next_payment_due: next_payment_due&.in_time_zone&.iso8601,
       financing_agreement_url: agreement&.pdf&.attached? ? agreement.pdf.url : nil,
       engagement_letter_url: agreement&.engagement_pdf&.attached? ? agreement.engagement_pdf.url : nil

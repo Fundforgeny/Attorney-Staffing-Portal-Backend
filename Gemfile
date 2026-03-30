@@ -86,6 +86,7 @@ gem "activity_notification", "~> 2.3.3"
 gem "sidekiq"
 
 gem "sidekiq-failures"
+gem "sidekiq-cron"
 
 # Collection of all sorts of useful information for every country in the ISO 3166 standard.
 gem "countries", "~> 5.7"

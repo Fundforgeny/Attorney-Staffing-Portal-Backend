@@ -1,12 +1,18 @@
 class GhlInboundWebhookService
-  STATIC_WEBHOOK_URL = "https://services.leadconnectorhq.com/hooks/ypwiHcCIbSqZMzXzrIhd/webhook-trigger/2SKCzqieUupUzm8earmZ".freeze
+  # Payment event webhook — separate from the login/magic-link webhook in GhlWebhookService
+  STATIC_WEBHOOK_URL = "https://services.leadconnectorhq.com/hooks/ypwiHcCIbSqZMzXzrIhd/webhook-trigger/d3d0e182-2544-4601-8ab5-636e9663c2f8".freeze
   PAYMENT_SUCCESSFUL_EVENT = "payment successful".freeze
   PAYMENT_FAILED_EVENT = "payment failed".freeze
-  PAYMENT_PLAN_CREATED_EVENT = "payment plan created".freeze
+  PAYMENT_PLAN_CREATED_EVENT      = "payment plan created".freeze
+  SEVEN_DAY_REMINDER_EVENT        = "7 day reminder".freeze
+  TWENTY_FOUR_HOUR_REMINDER_EVENT = "24 hour reminder".freeze
+  THIRTY_DAYS_LATE_EVENT          = "30 days late".freeze
+  CHARGEBACK_EVENT                = "chargeback".freeze
 
   NUMERIC_FIELDS = %i[
     down_payment
     payment_amount
+    installment_amount
     total_amount
     remaining_balance
   ].freeze
@@ -58,12 +64,12 @@ class GhlInboundWebhookService
       http.request(request)
     end
 
-    Rails.logger.info("[GHL Inbound] status=#{response.code} context=#{context} body=#{response.body}")
-    raise StandardError, "GHL inbound webhook failed with status #{response.code}" unless response.is_a?(Net::HTTPSuccess)
+    Rails.logger.info("[GHL Payment Webhook] status=#{response.code} context=#{context} body=#{response.body}")
+    raise StandardError, "GHL payment webhook failed with status #{response.code}" unless response.is_a?(Net::HTTPSuccess)
 
     response
   rescue StandardError => e
-    Rails.logger.error("[GHL Inbound] request_failed context=#{context} error=#{e.class}: #{e.message}")
+    Rails.logger.error("[GHL Payment Webhook] request_failed context=#{context} error=#{e.class}: #{e.message}")
     raise e
   end
 
