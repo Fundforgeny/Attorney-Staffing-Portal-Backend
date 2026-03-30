@@ -69,6 +69,35 @@ class ScheduledPaymentWorker
       .joins(:plan)
       .where.not(plans: { status: inactive_plan_statuses })
       .includes(:user, :payment_method, plan: :agreement)
+      .reject { |p| billing_period_covered?(p) }
+  end
+
+  # Exclude payments whose billing month has already been covered by a succeeded
+  # payment (manual or automated) totalling >= the plan's installment amount.
+  # This is a safety net — Payment#cancel_open_retries_if_covered! handles the
+  # primary cancellation path, but this catches any that slip through.
+  def billing_period_covered?(payment)
+    plan               = payment.plan
+    installment_amount = plan.monthly_payment.to_d
+    return false if installment_amount <= 0
+
+    reference_date = (payment.scheduled_at || Time.current).to_date
+    period_start   = reference_date.beginning_of_month
+    period_end     = reference_date.end_of_month
+
+    total_paid = plan.payments
+      .where(status: Payment.statuses[:succeeded])
+      .where("paid_at >= ? AND paid_at <= ?", period_start, period_end)
+      .where.not(id: payment.id)
+      .sum(:total_payment_including_fee)
+      .to_d
+
+    if total_paid >= installment_amount
+      Rails.logger.info("[ScheduledPaymentWorker] Skipping payment_id=#{payment.id} — billing period #{period_start}..#{period_end} already covered (paid=#{total_paid} installment=#{installment_amount})")
+      return true
+    end
+
+    false
   end
 
   def chargeable_statuses
