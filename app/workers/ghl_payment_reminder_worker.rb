@@ -109,7 +109,8 @@ class GhlPaymentReminderWorker
       installment_amount:  plan.monthly_payment.to_d,
       total_amount:        total_amount,
       remaining_balance:   plan.remaining_balance_logic.to_d,
-      overdue:        plan_overdue?(plan) ? "overdue" : "paying",
+      # overdue only for the 30-days-late event; reminders (7-day, 24-hour) are still "paying"
+      overdue:        event_name == GhlInboundWebhookService::THIRTY_DAYS_LATE_EVENT ? "overdue" : "paying",
       next_payment_date: next_due&.in_time_zone&.strftime("%m/%d/%Y"),
       next_payment_due:  next_due&.in_time_zone&.iso8601,
       last_paid:         last_payment&.paid_at&.in_time_zone&.iso8601,

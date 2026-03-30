@@ -33,7 +33,8 @@ class GhlInboundWebhookWorker
     total_amount = total_payment + total_interest
     next_payment_due = plan.next_payment_at || plan.calculated_next_payment_at
     status = event_name.presence || GhlInboundWebhookService.default_event_for_payment(payment)
-    is_overdue = plan_overdue?(plan)
+    # overdue only when payment explicitly failed — all successful payment events are "paying"
+    is_overdue = status == GhlInboundWebhookService::PAYMENT_FAILED_EVENT
 
     {
       email:          user.email.presence || "NA",
