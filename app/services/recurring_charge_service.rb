@@ -1,19 +1,25 @@
 # RecurringChargeService
 #
 # Handles automated recurring installment charges for active payment plans.
-# Called by ScheduledPaymentWorker for each payment that is due today.
+# Called by ChargePaymentWorker for each payment that is due or scheduled for retry.
 #
 # RETRY LOGIC
 # -----------
-# Up to 3 total attempts per payment (attempt 1 = original due date, attempts 2-3 = retries).
-# Retry schedule targets paydays to maximise collection success:
+# There is NO fixed attempt-count cap. Instead, we retry on EVERY qualifying payday
+# within a 28-day window from the original due date. This means a payment can receive
+# 6-10+ attempts depending on the calendar.
+#
+# Qualifying retry days (attempted in this order of priority, but all are hit):
 #   - The 1st of the month
 #   - The 15th of the month
-#   - Thursdays and Fridays (weekly payday)
-#   - Biweekly payday dates (every other Friday from a reference anchor)
-# Retries are spread across a 2-4 week window after the original due date.
-# After 3 failed attempts the payment is marked permanently failed, the plan is
-# flagged, and a GHL "needs new card" alert is fired.
+#   - Biweekly Fridays (every 14 days from BIWEEKLY_ANCHOR)
+#   - Every Thursday
+#   - Every Friday
+#
+# Between each attempt there is a minimum 1-day gap to avoid double-charging.
+# After the 28-day window expires with no success, the payment is exhausted:
+#   - needs_new_card is set to true
+#   - A GHL "needs new card" alert fires at 2 PM EST
 #
 # ACCOUNT UPDATER
 # ---------------
@@ -25,8 +31,8 @@
 # no pre-charge validation or polling is needed here.
 #
 class RecurringChargeService
-  MAX_ATTEMPTS    = 3
-  RETRY_WINDOW    = 28.days   # maximum days after original due date to keep retrying
+  RETRY_WINDOW    = 28.days   # Maximum days after original due date to keep retrying
+  MIN_GAP_DAYS    = 1         # Minimum days between consecutive attempts
 
   # Biweekly payday anchor — any known Friday that is a payday.
   # Adjust this date to match the most common biweekly pay cycle in your client base.
@@ -40,7 +46,7 @@ class RecurringChargeService
   end
 
   # Entry point — attempt to charge the card.
-  # Returns a result hash: { success: Boolean, rescheduled: Boolean, exhausted: Boolean }
+  # Returns a result hash: { success:, rescheduled:, exhausted:, reason: }
   def call
     payment_method = resolve_payment_method
     unless payment_method&.vault_token.present?
@@ -55,12 +61,12 @@ class RecurringChargeService
       { success: true, rescheduled: false, exhausted: false }
     else
       decline_reason = extract_decline_reason(transaction)
-      handle_failure!(payment_method, transaction, decline_reason)
+      handle_failure!(transaction, decline_reason)
     end
   rescue Spreedly::Error => e
-    transaction = e.payload.is_a?(Hash) ? e.payload["transaction"] : nil
+    transaction    = e.payload.is_a?(Hash) ? e.payload["transaction"] : nil
     decline_reason = extract_decline_reason(transaction) || e.message
-    handle_failure!(nil, transaction, decline_reason)
+    handle_failure!(transaction, decline_reason)
   rescue StandardError => e
     Rails.logger.error("[RecurringCharge] Unexpected error for payment_id=#{@payment.id}: #{e.class}: #{e.message}")
     { success: false, rescheduled: false, exhausted: false, reason: e.message }
@@ -73,11 +79,9 @@ class RecurringChargeService
   # ── Payment method resolution ────────────────────────────────────────────────
 
   def resolve_payment_method
-    # Prefer the payment method already linked to this payment row.
     pm = payment.payment_method
     return pm if pm&.vault_token.present?
 
-    # Fall back to the user's default/most recent payment method.
     user.payment_methods.ordered_for_user.first
   end
 
@@ -99,7 +103,6 @@ class RecurringChargeService
     workflow_key = ENV["SPREEDLY_WORKFLOW_KEY"].presence || ENV["SPREEDLY_COMPOSER_WORKFLOW_KEY"].presence
     payload[:transaction][:workflow_key] = workflow_key if workflow_key.present?
 
-    # Mark the payment as processing before the network call.
     payment.update_columns(
       status:          Payment.statuses[:processing],
       last_attempt_at: Time.current
@@ -113,9 +116,9 @@ class RecurringChargeService
 
   def finalize_success!(payment_method, transaction)
     payment.update!(
-      status:      :succeeded,
-      charge_id:   transaction["token"] || payment.charge_id,
-      paid_at:     Time.current,
+      status:         :succeeded,
+      charge_id:      transaction["token"] || payment.charge_id,
+      paid_at:        Time.current,
       decline_reason: nil,
       needs_new_card: false
     )
@@ -123,7 +126,6 @@ class RecurringChargeService
     plan.update!(status: :paid) if plan.remaining_balance_logic <= 0
     plan.refresh_next_payment_at!
 
-    SyncDataToGhl.perform_async(user.id, payment.id)
     GhlInboundWebhookWorker.perform_async(
       payment.id,
       GhlInboundWebhookService::INSTALLMENT_PAYMENT_SUCCESSFUL_EVENT
@@ -134,33 +136,27 @@ class RecurringChargeService
 
   # ── Failure path ─────────────────────────────────────────────────────────────
 
-  def handle_failure!(payment_method, transaction, decline_reason)
+  def handle_failure!(transaction, decline_reason)
     new_retry_count = payment.retry_count.to_i + 1
-    due_date        = payment.scheduled_at || Time.current
+    original_due    = (payment.scheduled_at || Time.current).to_date
+    window_end      = original_due + RETRY_WINDOW
 
     payment.update!(
-      status:         :failed,
-      retry_count:    new_retry_count,
+      status:          :failed,
+      retry_count:     new_retry_count,
       last_attempt_at: Time.current,
       decline_reason:  decline_reason,
       charge_id:       transaction&.dig("token") || payment.charge_id
     )
 
-    Rails.logger.warn("[RecurringCharge] FAILED payment_id=#{payment.id} attempt=#{new_retry_count}/#{MAX_ATTEMPTS} reason=#{decline_reason}")
+    Rails.logger.warn("[RecurringCharge] FAILED payment_id=#{payment.id} attempt=#{new_retry_count} reason=#{decline_reason}")
 
-    if new_retry_count >= MAX_ATTEMPTS
-      # All attempts exhausted — flag the payment and alert GHL.
+    # Find the next qualifying payday after today (minimum 1-day gap).
+    next_date = next_payday_after(Time.current.to_date, window_end)
+
+    if next_date.nil?
       exhaust_payment!
       return { success: false, rescheduled: false, exhausted: true, reason: decline_reason }
-    end
-
-    # Schedule the next retry on the next payday within the retry window.
-    next_date = next_payday_after(Time.current.to_date, due_date.to_date)
-
-    if next_date.nil? || next_date > due_date.to_date + RETRY_WINDOW
-      # Retry window expired — treat as exhausted.
-      exhaust_payment!
-      return { success: false, rescheduled: false, exhausted: true, reason: "retry_window_expired" }
     end
 
     payment.update!(
@@ -168,14 +164,14 @@ class RecurringChargeService
       next_retry_at: next_date.to_time(:utc)
     )
 
-    # Fire a GHL "payment failed" alert (with retry info) at 2 PM EST.
+    # Fire GHL "payment failed" alert at 2 PM EST.
     GhlInboundWebhookWorker.perform_async(
       payment.id,
       GhlInboundWebhookService::PAYMENT_FAILED_EVENT
     )
 
-    Rails.logger.info("[RecurringCharge] Rescheduled payment_id=#{payment.id} next_retry=#{next_date}")
-    { success: false, rescheduled: true, exhausted: false, next_retry: next_date }
+    Rails.logger.info("[RecurringCharge] Rescheduled payment_id=#{payment.id} next_retry=#{next_date} (attempt #{new_retry_count}, window ends #{window_end})")
+    { success: false, rescheduled: true, exhausted: false, next_retry: next_date, attempt: new_retry_count }
   end
 
   def exhaust_payment!
@@ -184,13 +180,12 @@ class RecurringChargeService
       needs_new_card: true
     )
 
-    # Fire GHL "needs new card" alert — this uses a special event constant.
     GhlInboundWebhookWorker.perform_async(
       payment.id,
       GhlInboundWebhookService::NEEDS_NEW_CARD_EVENT
     )
 
-    Rails.logger.warn("[RecurringCharge] EXHAUSTED payment_id=#{payment.id} plan_id=#{plan.id} — needs new card")
+    Rails.logger.warn("[RecurringCharge] EXHAUSTED payment_id=#{payment.id} plan_id=#{plan.id} — 28-day window expired, needs new card")
   end
 
   def handle_no_card!
@@ -208,21 +203,18 @@ class RecurringChargeService
 
   # ── Payday schedule logic ─────────────────────────────────────────────────────
   #
-  # Payday dates are (in priority order):
-  #   1. The 1st of the month
-  #   2. The 15th of the month
-  #   3. Biweekly Fridays (every 14 days from BIWEEKLY_ANCHOR)
-  #   4. Any Thursday or Friday
+  # Returns the next qualifying payday strictly after `from_date` (with a minimum
+  # MIN_GAP_DAYS gap) that falls on or before `window_end`.
   #
-  # We look forward from `from_date` (exclusive) and return the first payday
-  # that is at least 3 days away and within the retry window from `original_due`.
+  # Qualifying days — ALL of the following are attempted, not just the first match:
+  #   • 1st of the month
+  #   • 15th of the month
+  #   • Biweekly Fridays (every 14 days from BIWEEKLY_ANCHOR)
+  #   • Every Thursday
+  #   • Every Friday
   #
-  def next_payday_after(from_date, original_due)
-    window_end = original_due + RETRY_WINDOW
-    candidate  = from_date + 1
-
-    # Minimum 3 days between attempts.
-    candidate = from_date + 3 if candidate < from_date + 3
+  def next_payday_after(from_date, window_end)
+    candidate = from_date + MIN_GAP_DAYS
 
     while candidate <= window_end
       return candidate if payday?(candidate)
