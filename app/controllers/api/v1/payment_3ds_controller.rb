@@ -289,7 +289,7 @@ class Api::V1::Payment3dsController < ActionController::API
     vault_token = start_checkout_params[:vault_token].presence || start_checkout_params.dig(:payment_method, :vault_token).presence
     raise ArgumentError, "Missing vault_token" if vault_token.blank?
 
-    sync_spreedly_payment_method!(vault_token, start_checkout_params)
+    sync_spreedly_payment_method!(vault_token, start_checkout_params, user: user)
 
     payment_method = user.payment_methods.find_or_initialize_by(vault_token: vault_token)
     payment_method.assign_attributes(
@@ -390,8 +390,8 @@ class Api::V1::Payment3dsController < ActionController::API
     GhlInboundWebhookWorker.perform_async(payment.id, event_name)
   end
 
-  def sync_spreedly_payment_method!(vault_token, params)
-    attributes = spreedly_payment_method_attributes(params)
+  def sync_spreedly_payment_method!(vault_token, params, user: nil)
+    attributes = spreedly_payment_method_attributes(params, user: user)
     return if attributes.blank?
 
     Spreedly::PaymentMethodsService.new.update_payment_method(token: vault_token, **attributes)
@@ -399,16 +399,19 @@ class Api::V1::Payment3dsController < ActionController::API
     Rails.logger.warn("Failed to sync Spreedly payment method #{vault_token}: #{e.message}")
   end
 
-  def spreedly_payment_method_attributes(params)
+  def spreedly_payment_method_attributes(params, user: nil)
     source = params.respond_to?(:to_h) ? params.to_h.deep_symbolize_keys : {}
     billing = extract_address(source, {}, :billing)
     shipping = extract_address(source, {}, :shipping)
-
+    # NMI requires a company field — fall back to the user's firm name if not explicitly provided
+    company_name = source[:billing_company].presence ||
+                   user&.firm&.name.presence ||
+                   user&.firms&.first&.name.presence
     {
       full_name: source[:cardholder_name],
       email: source[:billing_email],
       phone_number: source[:billing_phone_number],
-      company: source[:billing_company],
+      company: company_name,
       address1: billing[:address1],
       address2: billing[:address2],
       city: billing[:city],
