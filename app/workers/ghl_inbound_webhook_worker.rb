@@ -52,9 +52,9 @@ class GhlInboundWebhookWorker
       total_amount:        total_amount,
       remaining_balance:   plan.remaining_balance_logic.to_d,
       overdue:        is_overdue ? "overdue" : "paying",
-      next_payment_date: next_payment_due&.in_time_zone&.strftime("%m/%d/%Y") || "NA",
-      next_payment_due:  next_payment_due&.in_time_zone&.iso8601 || "NA",
-      last_paid:         payment.paid_at&.in_time_zone&.iso8601 || "NA",
+      next_payment_date: next_payment_due&.in_time_zone&.strftime("%m/%d/%Y"),
+      next_payment_due:  next_payment_due&.in_time_zone&.iso8601,
+      last_paid:         payment.paid_at&.in_time_zone&.iso8601,
       date_processed:    payment.paid_at&.in_time_zone&.iso8601 || Time.current.iso8601,
       financing_agreement_url: agreement&.pdf&.attached? ? agreement.pdf.url : "NA",
       engagement_letter_url:   agreement&.engagement_pdf&.attached? ? agreement.engagement_pdf.url : "NA"

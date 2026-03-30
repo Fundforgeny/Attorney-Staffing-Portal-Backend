@@ -119,14 +119,19 @@ class GhlInboundWebhookService
   def normalize_numeric(value)
     return 0 if value.blank?
 
-    value.is_a?(String) ? value.presence || "0" : value
+    value.is_a?(String) ? value.to_f : value
   end
 
   def normalize_text(value)
-    value.to_s.presence || "NA"
+    # Text fields: send empty string rather than "NA" so GHL accepts them
+    value.to_s.presence || ""
   end
 
   def normalize_date(value)
-    value.to_s.presence || "NA"
+    # Date fields: send nil/null when no value — GHL rejects "NA" for date/numeric custom fields
+    v = value.to_s.presence
+    return nil if v.nil? || v == "NA"
+
+    v
   end
 end
