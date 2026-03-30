@@ -32,7 +32,7 @@ class GhlInboundWebhookService
     engagement_letter_url
   ].freeze
 
-  DATE_FIELDS = %i[next_payment_due last_paid].freeze
+  DATE_FIELDS = %i[next_payment_due last_paid date_processed].freeze
 
   def initialize(webhook_url = STATIC_WEBHOOK_URL)
     @webhook_url = webhook_url
