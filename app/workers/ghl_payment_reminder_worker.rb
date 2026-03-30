@@ -60,16 +60,32 @@ class GhlPaymentReminderWorker
   private
 
   # Fires a reminder for all active payment-plan plans whose next payment is exactly
-  # `days_ahead` days from today (within a ±12h window to handle timezone drift).
+  # `days_ahead` days from today.
+  # Queries plans that have a pending/processing monthly payment scheduled on that date.
   def fire_upcoming_reminders(webhook_url, days_ahead, event_name)
-    target_date = days_ahead.days.from_now.to_date
+    target_date  = days_ahead.days.from_now.to_date
     window_start = target_date.beginning_of_day
     window_end   = target_date.end_of_day
 
-    plans = Plan.where(status: Plan.statuses[:draft])
-                .where(next_payment_at: window_start..window_end)
+    # Find plans that have a pending/processing monthly payment due on the target date.
+    # Covers both next_payment_at (cached) and the actual payment scheduled_at.
+    plan_ids_from_payments = Payment
+      .monthly_payment
+      .where(status: [ Payment.statuses[:pending], Payment.statuses[:processing] ])
+      .where(scheduled_at: window_start..window_end)
+      .where(needs_new_card: false)
+      .pluck(:plan_id)
+      .uniq
 
-    Rails.logger.info("[GHL Reminder Worker] #{event_name}: found #{plans.count} plans due on #{target_date}")
+    plan_ids_from_next_payment_at = Plan
+      .where(next_payment_at: window_start..window_end)
+      .where.not(status: [ Plan.statuses[:paid], Plan.statuses[:failed], Plan.statuses[:expired] ])
+      .pluck(:id)
+
+    plan_ids = (plan_ids_from_payments + plan_ids_from_next_payment_at).uniq
+    plans    = Plan.where(id: plan_ids).includes(:user, :agreement, :payments)
+
+    Rails.logger.info("[GHL Reminder Worker] #{event_name}: found #{plans.size} plans due on #{target_date}")
 
     plans.each do |plan|
       fire_plan_event(webhook_url, plan, event_name)
@@ -78,17 +94,24 @@ class GhlPaymentReminderWorker
     end
   end
 
-  # Fires the 30-days-late event for all plans whose next_payment_at was exactly
-  # 30 days ago and are still in an unpaid/active state.
+  # Fires the 30-days-late event for all plans that have a monthly payment that
+  # was due 30+ days ago and is still unpaid (failed or pending with retries exhausted).
   def fire_overdue_reminders(webhook_url)
-    target_date  = THIRTY_DAYS_LATE_DAYS.days.ago.to_date
-    window_start = target_date.beginning_of_day
-    window_end   = target_date.end_of_day
+    cutoff_date = THIRTY_DAYS_LATE_DAYS.days.ago.end_of_day
 
-    plans = Plan.where(status: Plan.statuses[:draft])
-                .where(next_payment_at: window_start..window_end)
+    # Plans with a payment that was due 30+ days ago and never succeeded.
+    plan_ids = Payment
+      .monthly_payment
+      .where("scheduled_at <= ?", cutoff_date)
+      .where(status: [ Payment.statuses[:failed], Payment.statuses[:pending] ])
+      .joins(:plan)
+      .where.not(plans: { status: [ Plan.statuses[:paid], Plan.statuses[:expired] ] })
+      .pluck(:plan_id)
+      .uniq
 
-    Rails.logger.info("[GHL Reminder Worker] 30_days_late: found #{plans.count} plans overdue since #{target_date}")
+    plans = Plan.where(id: plan_ids).includes(:user, :agreement, :payments)
+
+    Rails.logger.info("[GHL Reminder Worker] 30_days_late: found #{plans.size} plans overdue since #{cutoff_date.to_date}")
 
     plans.each do |plan|
       fire_plan_event(webhook_url, plan, GhlInboundWebhookService::THIRTY_DAYS_LATE_EVENT)

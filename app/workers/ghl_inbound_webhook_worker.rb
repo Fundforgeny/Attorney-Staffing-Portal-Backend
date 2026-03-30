@@ -5,7 +5,8 @@ class GhlInboundWebhookWorker
   # Transactional events (payment_plan_created, payment_successful) fire immediately.
   BILLING_NOTIFICATION_EVENTS = [
     GhlInboundWebhookService::INSTALLMENT_PAYMENT_SUCCESSFUL_EVENT,
-    GhlInboundWebhookService::PAYMENT_FAILED_EVENT
+    GhlInboundWebhookService::PAYMENT_FAILED_EVENT,
+    GhlInboundWebhookService::NEEDS_NEW_CARD_EVENT
   ].freeze
 
   SEND_WINDOW_START_HOUR = 14  # 2:00 PM EST
@@ -69,6 +70,10 @@ class GhlInboundWebhookWorker
     # If payment_amount == total_amount, client paid everything upfront — down_payment equals payment_amount
     down_payment = payment_amount.to_d == total_amount ? payment_amount.to_d : plan.down_payment.to_d
 
+    # Include retry metadata so GHL workflows can branch on attempt number and card status.
+    retry_count    = payment.respond_to?(:retry_count) ? payment.retry_count.to_i : 0
+    needs_new_card = payment.respond_to?(:needs_new_card?) && payment.needs_new_card?
+
     {
       email:          user.email.presence || "NA",
       first_name:     user.first_name.presence || "NA",
@@ -91,7 +96,10 @@ class GhlInboundWebhookWorker
       date_processed:    payment.paid_at&.in_time_zone&.iso8601 || Time.current.iso8601,
       login_magic_link:  generate_magic_link(user),
       financing_agreement_url: agreement&.pdf&.attached? ? agreement.pdf.url : "NA",
-      engagement_letter_url:   agreement&.engagement_pdf&.attached? ? agreement.engagement_pdf.url : "NA"
+      engagement_letter_url:   agreement&.engagement_pdf&.attached? ? agreement.engagement_pdf.url : "NA",
+      retry_count:    retry_count,
+      needs_new_card: needs_new_card ? "yes" : "no",
+      decline_reason: payment.respond_to?(:decline_reason) ? payment.decline_reason.to_s : ""
     }
   end
 

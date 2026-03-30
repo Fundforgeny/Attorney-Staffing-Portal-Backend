@@ -21,7 +21,10 @@ class Payment < ApplicationRecord
   enum :status, { pending: 0, processing: 1, succeeded: 2, failed: 3 }
   enum :payment_type, { down_payment: 0, monthly_payment: 1, full_payment: 2 }
 
-  scope :due_today, -> { where(scheduled_at: Date.current.beginning_of_day..Date.current.end_of_day) }
+  scope :due_today,     -> { where(scheduled_at: Date.current.beginning_of_day..Date.current.end_of_day) }
+  scope :needs_new_card, -> { where(needs_new_card: true) }
+  scope :retryable,      -> { where(needs_new_card: false).where("retry_count > 0").where(status: [ statuses[:pending], statuses[:processing] ]) }
+  scope :due_for_retry,  -> { retryable.where("next_retry_at <= ?", Time.current.end_of_day) }
 
   private
 

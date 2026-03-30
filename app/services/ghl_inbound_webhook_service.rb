@@ -16,6 +16,7 @@ class GhlInboundWebhookService
   TWENTY_FOUR_HOUR_REMINDER_EVENT = "24 hour reminder".freeze
   THIRTY_DAYS_LATE_EVENT          = "30 days late".freeze
   CHARGEBACK_EVENT                = "chargeback".freeze
+  NEEDS_NEW_CARD_EVENT            = "needs new card".freeze
 
   NUMERIC_FIELDS = %i[
     down_payment
@@ -40,7 +41,11 @@ class GhlInboundWebhookService
     next_payment_date
     financing_agreement_url
     engagement_letter_url
+    needs_new_card
+    decline_reason
   ].freeze
+
+  RETRY_FIELDS = %i[retry_count].freeze
 
   DATE_FIELDS = %i[next_payment_due last_paid date_processed].freeze
 
@@ -107,6 +112,10 @@ class GhlInboundWebhookService
 
     DATE_FIELDS.each do |field|
       normalized[field] = normalize_date(normalized[field])
+    end
+
+    RETRY_FIELDS.each do |field|
+      normalized[field] = normalize_numeric(normalized[field])
     end
 
     normalized[:status] = normalized[:status].presence || normalized[:payment_status].presence || PAYMENT_SUCCESSFUL_EVENT

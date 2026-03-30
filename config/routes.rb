@@ -63,6 +63,14 @@ Rails.application.routes.draw do
     end
   end
 
+  # Spreedly Account Updater batch callback
+  # Configure this URL in the Spreedly dashboard: POST /webhooks/spreedly/account_updater
+  namespace :webhooks do
+    namespace :spreedly do
+      post :account_updater, to: "spreedly_account_updater#create"
+    end
+  end
+
   require "sidekiq/web"
   authenticate :admin_user do
     mount Sidekiq::Web => "/sidekiq"
