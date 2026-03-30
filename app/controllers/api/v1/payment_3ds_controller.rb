@@ -403,10 +403,11 @@ class Api::V1::Payment3dsController < ActionController::API
     source = params.respond_to?(:to_h) ? params.to_h.deep_symbolize_keys : {}
     billing = extract_address(source, {}, :billing)
     shipping = extract_address(source, {}, :shipping)
-    # NMI requires a company field — fall back to the user's firm name if not explicitly provided
+    # NMI requires a company field — fall back to firm name, then cardholder name
     company_name = source[:billing_company].presence ||
                    user&.firm&.name.presence ||
-                   user&.firms&.first&.name.presence
+                   user&.firms&.first&.name.presence ||
+                   source[:cardholder_name].presence
     {
       full_name: source[:cardholder_name],
       email: source[:billing_email],
