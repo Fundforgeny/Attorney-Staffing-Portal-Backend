@@ -35,7 +35,7 @@ class GhlInboundWebhookService
     status
     trigger
     firm_name
-    firm_slug
+    login_magic_link
     overdue
     next_payment_date
     financing_agreement_url

@@ -4,6 +4,13 @@ class GhlInboundWebhookWorker
   def perform(payment_id, event_name = nil, _request_headers = nil)
     payment = Payment.find(payment_id)
     plan = payment.plan
+    user = payment.user
+
+    # Guard: only fire if the contact exists in our database (has email or phone)
+    unless user.email.present? || user.phone.present?
+      Rails.logger.warn("[GHL Payment Webhook Worker] Skipping — user has no email or phone, user_id=#{user.id}")
+      return :no_contact_identity
+    end
 
     webhook_url = GhlInboundWebhookService.resolve_webhook_url
     if webhook_url.blank?
@@ -36,6 +43,10 @@ class GhlInboundWebhookWorker
     # overdue only when payment explicitly failed — all successful payment events are "paying"
     is_overdue = status == GhlInboundWebhookService::PAYMENT_FAILED_EVENT
 
+    payment_amount = payment.total_payment_including_fee.presence || payment.payment_amount.to_d
+    # If payment_amount == total_amount, client paid everything upfront — down_payment equals payment_amount
+    down_payment = payment_amount.to_d == total_amount ? payment_amount.to_d : plan.down_payment.to_d
+
     {
       email:          user.email.presence || "NA",
       first_name:     user.first_name.presence || "NA",
@@ -46,9 +57,8 @@ class GhlInboundWebhookWorker
       status:         status,
       trigger:        status,
       firm_name:      resolve_firm_name(user),
-      firm_slug:      resolve_firm_slug(user),
-      down_payment:        plan.down_payment.to_d,
-      payment_amount:      payment.total_payment_including_fee.presence || payment.payment_amount.to_d,
+      down_payment:        down_payment,
+      payment_amount:      payment_amount,
       installment_amount:  plan.monthly_payment.to_d,
       total_amount:        total_amount,
       remaining_balance:   plan.remaining_balance_logic.to_d,
@@ -57,6 +67,7 @@ class GhlInboundWebhookWorker
       next_payment_due:  next_payment_due&.in_time_zone&.iso8601,
       last_paid:         payment.paid_at&.in_time_zone&.iso8601,
       date_processed:    payment.paid_at&.in_time_zone&.iso8601 || Time.current.iso8601,
+      login_magic_link:  generate_magic_link(user),
       financing_agreement_url: agreement&.pdf&.attached? ? agreement.pdf.url : "NA",
       engagement_letter_url:   agreement&.engagement_pdf&.attached? ? agreement.engagement_pdf.url : "NA"
     }
@@ -69,13 +80,15 @@ class GhlInboundWebhookWorker
     "credit_card"
   end
 
-  def resolve_firm_name(user)
-    user.firms.where.not(name: "Fund Forge").pick(:name) || user.firm&.name || user.firms.pick(:name) || "NA"
+  def generate_magic_link(user)
+    LoginLinkService.new(user: user).generate_link
+  rescue StandardError => e
+    Rails.logger.warn("[GHL Payment Webhook Worker] Could not generate magic link for user_id=#{user.id}: #{e.message}")
+    nil
   end
 
-  def resolve_firm_slug(user)
-    name = resolve_firm_name(user)
-    name.downcase.gsub(/[^a-z0-9]+/, "_").gsub(/^_|_$/, "")
+  def resolve_firm_name(user)
+    user.firms.where.not(name: "Fund Forge").pick(:name) || user.firm&.name || user.firms.pick(:name) || "NA"
   end
 
   # Returns true if the next payment due date has passed by at least 1 day (even 1 day late = overdue)
