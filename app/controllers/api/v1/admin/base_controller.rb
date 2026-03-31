@@ -2,6 +2,7 @@
 #
 # Base controller for all admin API endpoints.
 # Uses a signed JWT token issued at /api/v1/admin/auth/sign_in.
+# Tokens are encoded with HS256 using the same secret as Devise JWT.
 #
 class Api::V1::Admin::BaseController < ActionController::API
   include ApiResponse
@@ -14,7 +15,12 @@ class Api::V1::Admin::BaseController < ActionController::API
     token = request.headers["Authorization"]&.split(" ")&.last
     return render_error(message: "Unauthorized", status: :unauthorized) if token.blank?
 
-    payload = Warden::JWTAuth::TokenDecoder.new.call(token)
+    secret = ENV["DEVISE_JWT_SECRET_KEY"].presence ||
+             Rails.application.credentials.devise_jwt_secret_key.presence ||
+             Rails.application.secret_key_base
+
+    payload, _header = JWT.decode(token, secret, true, algorithms: ["HS256"])
+
     # Admin tokens carry sub = "admin:<id>"
     sub = payload["sub"].to_s
     unless sub.start_with?("admin:")
@@ -24,7 +30,7 @@ class Api::V1::Admin::BaseController < ActionController::API
     admin_id = sub.split(":").last.to_i
     @current_admin = AdminUser.find_by(id: admin_id)
     render_error(message: "Unauthorized", status: :unauthorized) unless @current_admin
-  rescue JWT::DecodeError, Warden::JWTAuth::Errors::RevokedToken, StandardError
+  rescue JWT::DecodeError, JWT::ExpiredSignature, StandardError
     render_error(message: "Unauthorized", status: :unauthorized)
   end
 
