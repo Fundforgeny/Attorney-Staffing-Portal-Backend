@@ -4,7 +4,7 @@ ActiveAdmin.register GraceWeekRequest do
   permit_params :status, :admin_note
 
   # ── Scopes ────────────────────────────────────────────────────────────────
-  scope("Pending Review") { |s| s.where(status: :pending) }, default: true
+  scope("Pending Review", default: true) { |s| s.where(status: :pending) }
   scope :approved
   scope :denied
   scope :all
