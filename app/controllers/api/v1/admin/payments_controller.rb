@@ -58,7 +58,7 @@ class Api::V1::Admin::PaymentsController < Api::V1::Admin::BaseController
       plan_name:       p.plan&.name,
       client_name:     p.plan&.user&.full_name,
       client_email:    p.plan&.user&.email,
-      amount:          p.amount.to_f,
+      amount:          p.payment_amount.to_f,
       status:          p.status,
       payment_type:    p.payment_type,
       scheduled_at:    p.scheduled_at,

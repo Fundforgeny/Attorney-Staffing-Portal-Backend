@@ -174,7 +174,7 @@ class Api::V1::Admin::PlansController < Api::V1::Admin::BaseController
   def payment_detail(payment)
     {
       id:               payment.id,
-      amount:           payment.amount.to_f,
+      amount:           payment.payment_amount.to_f,
       status:           payment.status,
       payment_type:     payment.payment_type,
       scheduled_at:     payment.scheduled_at,

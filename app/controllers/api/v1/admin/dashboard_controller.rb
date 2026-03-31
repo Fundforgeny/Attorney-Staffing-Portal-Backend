@@ -24,7 +24,7 @@ class Api::V1::Admin::DashboardController < Api::V1::Admin::BaseController
       total_users:         User.count,
       total_plans:         Plan.count,
       active_plans:        Plan.where(status: :paid).count,
-      total_revenue:       Payment.where(status: :succeeded).sum(:amount).to_f.round(2),
+      total_revenue:       Payment.where(status: :succeeded).sum(:payment_amount).to_f.round(2),
       total_payments:      Payment.count,
       succeeded_payments:  Payment.where(status: :succeeded).count,
       failed_payments:     Payment.where(status: :failed).count,
@@ -41,7 +41,7 @@ class Api::V1::Admin::DashboardController < Api::V1::Admin::BaseController
     monthly_revenue = months.map do |m|
       Payment.where(status: :succeeded)
              .where(created_at: m..m.end_of_month)
-             .sum(:amount).to_f.round(2)
+             .sum(:payment_amount).to_f.round(2)
     end
 
     monthly_success_payments = months.map do |m|
@@ -76,7 +76,7 @@ class Api::V1::Admin::DashboardController < Api::V1::Admin::BaseController
       succeeded: Payment.where(status: :succeeded).count,
       pending:   Payment.where(status: [:pending, :processing]).count,
       failed:    Payment.where(status: :failed).count,
-      cancelled: Payment.where(status: :cancelled).count
+      cancelled: 0  # no cancelled status in Payment enum
     }
   end
 
@@ -130,7 +130,7 @@ class Api::V1::Admin::DashboardController < Api::V1::Admin::BaseController
         id:           p.id,
         plan_id:      p.plan_id,
         client_name:  p.plan&.user&.full_name,
-        amount:       p.amount.to_f,
+        amount:       p.payment_amount.to_f,
         status:       p.status,
         payment_type: p.payment_type,
         created_at:   p.created_at
