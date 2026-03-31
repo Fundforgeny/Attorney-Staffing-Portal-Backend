@@ -61,6 +61,49 @@ Rails.application.routes.draw do
       post 'stripe_webhooks/update_payment_status', to: 'stripe_webhooks#update_payment_status'
       post 'magic_links/validate', to: 'magic_links#validate'
 
+      # ── Admin API (JWT-authenticated) ──────────────────────────────────────
+      namespace :admin do
+        # Auth
+        post "auth/sign_in", to: "auth#sign_in"
+
+        # Dashboard
+        get "dashboard", to: "dashboard#index"
+
+        # Plans
+        resources :plans, only: [:index, :show] do
+          member do
+            post :sync_ghl
+            post :manual_charge
+            post :charge_payment
+            post :set_default_card
+            delete :delete_card
+            post :approve_grace_week
+            post :deny_grace_week
+          end
+        end
+
+        # Payments
+        resources :payments, only: [:index, :show] do
+          member do
+            post :charge_now
+          end
+        end
+
+        # Users
+        resources :users, only: [:index, :show]
+
+        # Leads (non-paid plans)
+        resources :leads, only: [:index]
+
+        # Grace Week Queue
+        resources :grace_week_requests, only: [:index, :show] do
+          member do
+            post :approve
+            post :deny
+          end
+        end
+      end
+
       # Customer-facing payment portal endpoints (JWT-authenticated)
       namespace :customer do
         resources :plans, only: [] do
