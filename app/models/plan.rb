@@ -2,6 +2,7 @@ class Plan < ApplicationRecord
 	belongs_to :user
 	has_one :agreement, dependent: :destroy
   has_many :payments, dependent: :destroy
+  has_many :grace_week_requests, dependent: :destroy
 
 	enum :status, {
     draft: 0,

@@ -60,6 +60,27 @@ Rails.application.routes.draw do
       post 'stripe_webhooks', to: 'stripe_webhooks#receive'
       post 'stripe_webhooks/update_payment_status', to: 'stripe_webhooks#update_payment_status'
       post 'magic_links/validate', to: 'magic_links#validate'
+
+      # Customer-facing payment portal endpoints (JWT-authenticated)
+      namespace :customer do
+        resources :plans, only: [] do
+          member do
+            get  :terms
+            get  :invoices
+          end
+          resources :payments, only: [] do
+            collection do
+              get  :history
+              post :manual_payment
+            end
+          end
+          resources :grace_week_requests, only: [:create] do
+            collection do
+              get :status
+            end
+          end
+        end
+      end
     end
   end
 
