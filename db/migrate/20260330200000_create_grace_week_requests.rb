@@ -5,7 +5,7 @@ class CreateGraceWeekRequests < ActiveRecord::Migration[7.2]
       t.references :user,    null: false, foreign_key: true
       t.references :payment, null: false, foreign_key: true  # the original installment being split
 
-      t.string  :status,          null: false, default: "pending"  # pending | approved | denied
+      t.integer :status,          null: false, default: 0  # 0=pending, 1=approved, 2=denied
       t.text    :reason                                              # client's reason for requesting
       t.text    :admin_note                                         # admin note on approval/denial
       t.decimal :half_amount,     precision: 10, scale: 2          # installment / 2

@@ -3,7 +3,7 @@ class GraceWeekRequest < ApplicationRecord
   belongs_to :user
   belongs_to :payment  # the original installment being split
 
-  enum status: { pending: "pending", approved: "approved", denied: "denied" }
+  enum :status, { pending: 0, approved: 1, denied: 2 }
 
   validates :status,         presence: true
   validates :requested_at,   presence: true
