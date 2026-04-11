@@ -1,0 +1,17 @@
+---
+# Sidekiq configuration
+# Queues listed in priority order (higher = higher priority)
+:queues:
+  - [payments, 10]
+  - [default, 5]
+  - [webhooks, 3]
+  - [mailers, 2]
+  - [low, 1]
+
+:concurrency: 5
+
+:max_retries: 2
+
+# Cron jobs (requires sidekiq-cron gem)
+:scheduler:
+  :enabled: true
