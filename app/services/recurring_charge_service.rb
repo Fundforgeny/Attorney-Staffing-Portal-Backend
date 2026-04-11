@@ -21,6 +21,27 @@
 #   - needs_new_card is set to true
 #   - A GHL "needs new card" alert fires at 2 PM EST
 #
+# HARD DECLINE HANDLING
+# ---------------------
+# Certain decline reasons indicate the card can never be retried and a new card
+# is required immediately. These bypass the 28-day retry window and trigger
+# needs_new_card + GHL alert right away:
+#   - Account closed / closed account
+#   - Pick up card (card reported stolen/lost by issuer)
+#   - Stolen card / lost card
+#   - Payment method has been redacted (Spreedly deleted the vault token)
+#   - Do not honor (permanent block by issuer)
+#   - Invalid account / no such account
+#   - Revocation of authorization
+#   - Card not permitted / transaction not permitted
+#   - Restricted card / security violation
+#   - Fraud / fraudulent
+#   - Invalid card number / no card record
+#   - Card member cancelled
+#
+# Soft declines (insufficient funds, generic decline, etc.) still follow the
+# normal 28-day retry window with payday-based rescheduling.
+#
 # ACCOUNT UPDATER
 # ---------------
 # Spreedly Account Updater runs as a batch process (1-2x/month).
@@ -37,6 +58,34 @@ class RecurringChargeService
   # Biweekly payday anchor — any known Friday that is a payday.
   # Adjust this date to match the most common biweekly pay cycle in your client base.
   BIWEEKLY_ANCHOR = Date.new(2024, 1, 5)  # Friday, Jan 5 2024
+
+  # Hard decline patterns — any decline reason matching one of these strings
+  # means the card cannot be retried and needs_new_card must be set immediately.
+  # Matching is case-insensitive substring search.
+  HARD_DECLINE_PATTERNS = [
+    "account closed",
+    "closed account",
+    "pick up card",
+    "pickup card",
+    "stolen card",
+    "lost card",
+    "do not honor",
+    "invalid account",
+    "no such account",
+    "revocation",
+    "card not permitted",
+    "transaction not permitted",
+    "restricted card",
+    "security violation",
+    "fraud",
+    "fraudulent",
+    "invalid card number",
+    "no card record",
+    "card member cancelled",
+    "has been redacted",       # Spreedly: "payment method has been redacted"
+    "payment method redacted",
+    "redacted",
+  ].freeze
 
   def initialize(payment:)
     @payment = payment
@@ -151,6 +200,13 @@ class RecurringChargeService
 
     Rails.logger.warn("[RecurringCharge] FAILED payment_id=#{payment.id} attempt=#{new_retry_count} reason=#{decline_reason}")
 
+    # Hard declines: card cannot be retried — exhaust immediately regardless of window.
+    if hard_decline?(decline_reason)
+      Rails.logger.warn("[RecurringCharge] HARD DECLINE payment_id=#{payment.id} — exhausting immediately, needs new card")
+      exhaust_payment!
+      return { success: false, rescheduled: false, exhausted: true, hard_decline: true, reason: decline_reason }
+    end
+
     # Find the next qualifying payday after today (minimum 1-day gap).
     next_date = next_payday_after(Time.current.to_date, window_end)
 
@@ -160,7 +216,7 @@ class RecurringChargeService
     end
 
     payment.update!(
-      status:       :pending,
+      status:        :pending,
       next_retry_at: next_date.to_time(:utc)
     )
 
@@ -185,7 +241,7 @@ class RecurringChargeService
       GhlInboundWebhookService::NEEDS_NEW_CARD_EVENT
     )
 
-    Rails.logger.warn("[RecurringCharge] EXHAUSTED payment_id=#{payment.id} plan_id=#{plan.id} — 28-day window expired, needs new card")
+    Rails.logger.warn("[RecurringCharge] EXHAUSTED payment_id=#{payment.id} plan_id=#{plan.id} — needs new card")
   end
 
   def handle_no_card!
@@ -199,6 +255,16 @@ class RecurringChargeService
       payment.id,
       GhlInboundWebhookService::NEEDS_NEW_CARD_EVENT
     )
+  end
+
+  # ── Hard decline detection ────────────────────────────────────────────────────
+
+  # Returns true if the decline reason indicates the card can never be retried.
+  def hard_decline?(reason)
+    return false if reason.blank?
+
+    normalized = reason.to_s.downcase
+    HARD_DECLINE_PATTERNS.any? { |pattern| normalized.include?(pattern) }
   end
 
   # ── Payday schedule logic ─────────────────────────────────────────────────────
