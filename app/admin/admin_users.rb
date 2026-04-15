@@ -20,7 +20,6 @@ ActiveAdmin.register AdminUser do
     actions defaults: true do |admin_user|
       item "Reset Password",
            reset_password_admin_admin_user_path(admin_user),
-           method: :get,
            class: "member_link"
     end
   end
@@ -56,42 +55,75 @@ ActiveAdmin.register AdminUser do
     f.actions
   end
 
-  # ── Password Reset Member Action ───────────────────────────────────────────
-  # GET  /admin/admin_users/:id/reset_password  → show the reset form
-  # POST /admin/admin_users/:id/reset_password  → apply the new password
+  # ── Reset Password Action (GET + POST) ─────────────────────────────────────
   member_action :reset_password, method: [:get, :post] do
     @admin_user = AdminUser.find(params[:id])
+    @error      = nil
+    @success    = false
 
     if request.post?
-      new_password = params[:new_password].to_s.strip
-      confirmation = params[:new_password_confirmation].to_s.strip
+      new_pw   = params[:new_password].to_s.strip
+      confirm  = params[:new_password_confirmation].to_s.strip
 
-      if new_password.blank?
-        flash[:error] = "Password cannot be blank."
-        render :reset_password and return
-      end
-
-      if new_password != confirmation
-        flash[:error] = "Password and confirmation do not match."
-        render :reset_password and return
-      end
-
-      if new_password.length < 8
-        flash[:error] = "Password must be at least 8 characters."
-        render :reset_password and return
-      end
-
-      if @admin_user.update(password: new_password, password_confirmation: confirmation)
-        flash[:notice] = "Password for #{@admin_user.email} has been reset successfully."
-        redirect_to admin_admin_user_path(@admin_user)
+      if new_pw.blank?
+        @error = "Password cannot be blank."
+      elsif new_pw.length < 8
+        @error = "Password must be at least 8 characters."
+      elsif new_pw != confirm
+        @error = "Password and confirmation do not match."
       else
-        flash[:error] = "Failed to reset password: #{@admin_user.errors.full_messages.join(', ')}"
-        render :reset_password
+        if @admin_user.update(password: new_pw, password_confirmation: confirm)
+          flash[:notice] = "Password for #{@admin_user.email} has been reset successfully."
+          redirect_to admin_admin_user_path(@admin_user) and return
+        else
+          @error = "Failed: #{@admin_user.errors.full_messages.join(', ')}"
+        end
       end
     end
-    # GET → just render the form view
+
+    # Render the form inline using Arbre
+    render layout: "active_admin" do
+      columns do
+        column do
+          panel "Reset Password for #{@admin_user.email}" do
+            if @error
+              div class: "flash flash_error" do
+                @error
+              end
+            end
+
+            active_admin_form_for @admin_user,
+                                  url: reset_password_admin_admin_user_path(@admin_user),
+                                  html: { method: :post } do |f|
+              f.inputs "New Password" do
+                f.input :password,
+                        label: "New Password",
+                        hint: "Minimum 8 characters",
+                        input_html: {
+                          name: "new_password",
+                          id: "new_password",
+                          autocomplete: "new-password"
+                        }
+                f.input :password_confirmation,
+                        label: "Confirm New Password",
+                        input_html: {
+                          name: "new_password_confirmation",
+                          id: "new_password_confirmation",
+                          autocomplete: "new-password"
+                        }
+              end
+              f.actions do
+                f.action :submit, label: "Reset Password"
+                f.cancel_link admin_admin_user_path(@admin_user)
+              end
+            end
+          end
+        end
+      end
+    end
   end
 
+  # ── Action Item Button on Show Page ────────────────────────────────────────
   action_item :reset_password, only: :show do
     link_to "Reset Password",
             reset_password_admin_admin_user_path(resource),
