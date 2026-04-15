@@ -102,9 +102,9 @@ class Api::V1::Customer::PaymentsController < ActionController::API
     {
       id:                          payment.id,
       payment_type:                payment.payment_type,
-      amount:                      payment.payment_amount.to_d,
+      payment_amount:              payment.payment_amount.to_d,
       transaction_fee:             payment.transaction_fee.to_d,
-      total:                       payment.total_payment_including_fee.to_d,
+      total_payment_including_fee: payment.total_payment_including_fee.to_d,
       status:                      payment.status,
       scheduled_at:                payment.scheduled_at,
       paid_at:                     payment.paid_at,

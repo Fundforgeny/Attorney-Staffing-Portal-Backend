@@ -1,51 +1,35 @@
-class Api::V1::Auth::LoginLinksController < ActionController::API
+# Api::V1::Customer::UsersController
+#
+# Customer-facing user endpoints. Returns the authenticated customer's own data.
+#
+class Api::V1::Customer::UsersController < ActionController::API
   include ApiResponse
+  before_action :authenticate_customer!
 
-  def create
-    email = params[:email].to_s.strip.downcase
-    return render_error(message: "Email is required", status: :bad_request) if email.blank?
-
-    user = User.find_by(email: email)
-    return render_error(message: "User not found", status: :not_found) if user.nil?
-
-    login_magic_link = LoginLinkService.new(user: user).generate_link
-    
-    GhlWebhookService.send_login_magic_link!(user: user, login_magic_link: login_magic_link)
-    puts "Login magic link: #{login_magic_link}"
-    render_success(
-      data: { email: user.email },
-      message: "Login link sent successfully",
-      status: :ok
-    )
-  rescue StandardError => e
-    render_error(message: e.message, status: :unprocessable_entity)
-  end
-
-  def show
-    token = params[:token]
-    verified_user = LoginLinkService.verify!(token)
-    user = User.includes(:payment_method, :firm, :firms, agreements: :plan, plans: [ :agreement, :payments ]).find(verified_user.id)
-    auth_token, = Warden::JWTAuth::UserEncoder.new.call(user, :user, nil)
-
-    render_success(
-      data: {
-        auth_token: auth_token,
-        user: serialized_user(user)
-      },
-      message: "Login link verified successfully",
-      status: :ok
-    )
-  rescue LoginLinkService::InvalidTokenError => e
-    render_error(message: e.message, status: :unprocessable_entity)
-  rescue LoginLinkService::ExpiredTokenError => e
-    render_error(message: e.message, status: :unprocessable_entity)
-  rescue LoginLinkService::UsedTokenError => e
-    render_error(message: e.message, status: :unprocessable_entity)
-  rescue StandardError => e
-    render_error(message: e.message, status: :unprocessable_entity)
+  # GET /api/v1/customer/me
+  # Returns the current customer's profile, plans, and agreements.
+  def me
+    user = User.includes(:payment_method, :firm, :firms, agreements: :plan, plans: [:agreement, :payments]).find(@current_customer.id)
+    render_success(data: serialized_user(user))
   end
 
   private
+
+  def authenticate_customer!
+    token = request.headers["Authorization"]&.split(" ")&.last
+    unless token.present?
+      return render_error(message: "Unauthorized", status: :unauthorized)
+    end
+
+    payload = Warden::JWTAuth::TokenDecoder.new.call(token)
+    @current_customer = User.find_by(id: payload["sub"])
+
+    unless @current_customer
+      render_error(message: "Unauthorized", status: :unauthorized)
+    end
+  rescue JWT::DecodeError, Warden::JWTAuth::Errors::RevokedToken
+    render_error(message: "Session expired. Please log in again.", status: :unauthorized)
+  end
 
   def serialized_user(user)
     {
@@ -99,8 +83,7 @@ class Api::V1::Auth::LoginLinksController < ActionController::API
     return "active" if plan.paid?
     return "completed" if plan.expired?
     return "canceled" if plan.failed?
-
-    "active"
+    plan.status
   end
 
   def serialized_payment(payment)
@@ -113,7 +96,6 @@ class Api::V1::Auth::LoginLinksController < ActionController::API
       payment_amount: payment.payment_amount,
       total_payment_including_fee: payment.total_payment_including_fee,
       transaction_fee: payment.transaction_fee,
-      administration_fee_amount: payment.transaction_fee,
       charge_id: payment.charge_id,
       scheduled_at: payment.scheduled_at,
       paid_at: payment.paid_at,
@@ -124,7 +106,6 @@ class Api::V1::Auth::LoginLinksController < ActionController::API
 
   def serialized_payment_method(payment_method)
     return nil if payment_method.blank?
-
     {
       id: payment_method.id,
       provider: payment_method.provider,
@@ -140,7 +121,6 @@ class Api::V1::Auth::LoginLinksController < ActionController::API
 
   def serialized_firm(firm)
     return nil if firm.blank?
-
     {
       id: firm.id,
       name: firm.name,
@@ -155,28 +135,13 @@ class Api::V1::Auth::LoginLinksController < ActionController::API
 
   def serialized_agreement(agreement)
     return nil if agreement.blank?
-
     {
       id: agreement.id,
       user_id: agreement.user_id,
       plan_id: agreement.plan_id,
       signed_at: agreement.signed_at,
-      pdf_url: agreement_attachment_url(agreement.pdf),
-      engagement_pdf_url: agreement_attachment_url(agreement.engagement_pdf),
-      signature_url: agreement_attachment_url(agreement.signature),
       created_at: agreement.created_at,
       updated_at: agreement.updated_at
     }
   end
-
-  def agreement_attachment_url(attachment)
-    return nil unless attachment.attached?
-    return nil unless attachment.blob.service.exist?(attachment.key)
-
-    rails_blob_url(attachment, disposition: "inline")
-  rescue StandardError => e
-    Rails.logger.warn("Agreement attachment URL generation failed for blob #{attachment.blob_id}: #{e.message}")
-    nil
-  end
 end
-

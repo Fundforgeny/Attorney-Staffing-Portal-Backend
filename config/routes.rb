@@ -106,6 +106,7 @@ Rails.application.routes.draw do
 
       # Customer-facing payment portal endpoints (JWT-authenticated)
       namespace :customer do
+        get "me", to: "users#me"
         resources :plans, only: [] do
           member do
             get  :terms
