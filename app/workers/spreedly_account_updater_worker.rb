@@ -128,7 +128,11 @@ class SpreedlyAccountUpdaterWorker
   end
 
   # ── Requeue blocked payments after card refresh ───────────────────────────────
-
+  #
+  # Only called when Spreedly confirms the card has been updated (retained/cached).
+  # We immediately enqueue ChargePaymentWorker rather than waiting for the next
+  # scheduled run, since the card is freshly confirmed valid.
+  #
   def requeue_blocked_payments!(payment_method)
     blocked = Payment
       .where(payment_method: payment_method)
@@ -141,10 +145,14 @@ class SpreedlyAccountUpdaterWorker
     blocked.each do |payment|
       payment.update_columns(
         needs_new_card: false,
+        decline_reason: nil,
         status:         Payment.statuses[:pending],
-        next_retry_at:  Time.current  # Picked up by next ScheduledPaymentWorker run
+        next_retry_at:  Time.current
       )
-      Rails.logger.info("[AccountUpdater] Requeued payment_id=#{payment.id} after card refresh")
+      # Immediately enqueue the charge — don't wait for the next scheduled sweep.
+      # Spreedly has confirmed the card is valid, so we charge right away.
+      ChargePaymentWorker.perform_async(payment.id)
+      Rails.logger.info("[AccountUpdater] Requeued payment_id=#{payment.id} for immediate charge after card refresh via Account Updater")
     end
   end
 
