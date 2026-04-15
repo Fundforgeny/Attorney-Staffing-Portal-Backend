@@ -59,6 +59,23 @@ class RecurringChargeService
   # Adjust this date to match the most common biweekly pay cycle in your client base.
   BIWEEKLY_ANCHOR = Date.new(2024, 1, 5)  # Friday, Jan 5 2024
 
+  # 3DS / SCA patterns — these are NOT hard declines on recurring charges.
+  # Stripe/Spreedly may return these when 3DS is triggered on a card that doesn't
+  # support it or when we don't have a SCA provider configured. Treat as soft
+  # declines so the Composer workflow can recover them on the next retry cycle.
+  THREE_DS_PATTERNS = [
+    "3ds",
+    "3d secure",
+    "authentication required",
+    "authentication_required",
+    "sca",
+    "strong customer authentication",
+    "unexpected 3ds",
+    "3ds authentication",
+    "requires_action",
+    "requires action",
+  ].freeze
+
   # Hard decline patterns — any decline reason matching one of these strings
   # means the card cannot be retried and needs_new_card must be set immediately.
   # Matching is case-insensitive substring search.
@@ -292,11 +309,25 @@ class RecurringChargeService
   # ── Hard decline detection ────────────────────────────────────────────────────
 
   # Returns true if the decline reason indicates the card can never be retried.
+  # 3DS/SCA errors are explicitly excluded — they are soft declines on recurring
+  # charges and should be retried via the Composer workflow recovery cycle.
   def hard_decline?(reason)
     return false if reason.blank?
 
     normalized = reason.to_s.downcase
+
+    # Never treat 3DS/SCA errors as hard declines on recurring charges.
+    return false if THREE_DS_PATTERNS.any? { |pattern| normalized.include?(pattern) }
+
     HARD_DECLINE_PATTERNS.any? { |pattern| normalized.include?(pattern) }
+  end
+
+  # Returns true if the decline is a 3DS/SCA authentication challenge.
+  # These are retried via the Composer workflow on the next payday cycle.
+  def three_ds_decline?(reason)
+    return false if reason.blank?
+    normalized = reason.to_s.downcase
+    THREE_DS_PATTERNS.any? { |pattern| normalized.include?(pattern) }
   end
 
   # ── Payday schedule logic ─────────────────────────────────────────────────────
