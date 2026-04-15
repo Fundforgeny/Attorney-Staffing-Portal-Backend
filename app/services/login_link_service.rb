@@ -20,7 +20,7 @@ class LoginLinkService
       expires_at: Time.current + LoginLinkToken::EXPIRATION_WINDOW
     )
 
-    "#{frontend_base_url}/login?token=#{CGI.escape(raw_token)}"
+    "#{frontend_base_url}/customer/login-link?token=#{CGI.escape(raw_token)}"
   end
 
   def self.verify!(raw_token)

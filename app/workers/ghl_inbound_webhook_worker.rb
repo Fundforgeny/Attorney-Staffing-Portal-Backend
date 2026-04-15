@@ -43,8 +43,11 @@ class GhlInboundWebhookWorker
     total_amount = total_payment + total_interest
     next_payment_due = plan.next_payment_at || plan.calculated_next_payment_at
     status = event_name.presence || GhlInboundWebhookService.default_event_for_payment(payment)
-    # overdue only when payment explicitly failed — all successful payment events are "paying"
-    is_overdue = status == GhlInboundWebhookService::PAYMENT_FAILED_EVENT
+    # overdue when: payment explicitly failed, needs new card, or the plan's next due date has passed
+    is_overdue = status == GhlInboundWebhookService::PAYMENT_FAILED_EVENT ||
+                 status == GhlInboundWebhookService::NEEDS_NEW_CARD_EVENT ||
+                 (payment.respond_to?(:needs_new_card?) && payment.needs_new_card?) ||
+                 plan_overdue?(plan)
 
     payment_amount = payment.total_payment_including_fee.presence || payment.payment_amount.to_d
     # If payment_amount == total_amount, client paid everything upfront — down_payment equals payment_amount
