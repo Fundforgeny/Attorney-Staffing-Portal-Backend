@@ -101,7 +101,9 @@ class GhlInboundWebhookWorker
   end
 
   def resolve_firm_name(user)
-    user.firms.where.not(name: "Fund Forge").pick(:name) || user.firm&.name || user.firms.pick(:name) || "NA"
+    # Always return the law firm name (non-Fund Forge). If the client only has a Fund Forge
+    # record (direct Fund Forge client with no law firm association), default to Ironclad Law.
+    user.firms.where.not(name: "Fund Forge").pick(:name) || "Ironclad Law"
   end
 
   # Returns true if the next payment due date has passed by at least 1 day (even 1 day late = overdue)
