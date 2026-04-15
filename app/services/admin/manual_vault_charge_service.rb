@@ -53,13 +53,34 @@ module Admin
     end
 
     def purchase!(payment)
+      # Sync missing billing data from GHL before charging
+      GhlBillingSyncService.new(user).sync_if_needed! rescue nil
+      user.reload
+
+      billing = {
+        name:     user.full_name.presence,
+        address1: user.address_street.presence,
+        city:     user.city.presence,
+        state:    user.state.presence,
+        zip:      user.postal_code.presence,
+        country:  (user.country.presence || "US").then { |c| c.length > 2 ? country_code_for(c) : c }
+      }.compact
+
       payload = {
         transaction: {
           payment_method_token: payment_method.vault_token,
-          amount: (payment.total_payment_including_fee.to_d * 100).to_i,
-          currency_code: "USD",
-          retain_on_success: false,
-          description: description
+          amount:               (payment.total_payment_including_fee.to_d * 100).to_i,
+          currency_code:        "USD",
+          retain_on_success:    false,
+          description:          description,
+          # ── Stripe Radar required signals ──────────────────────────────────────
+          # Passing email, name, and billing address dramatically improves fraud
+          # model accuracy and prevents Radar from blocking legitimate charges.
+          # See: https://docs.stripe.com/radar/optimize-risk-factors
+          email:                user.email.presence
+        }.tap { |t|
+          t[:billing_address] = billing unless billing.empty?
+          t.delete(:email) if t[:email].blank?
         }
       }
 
@@ -71,6 +92,15 @@ module Admin
     rescue Spreedly::Error => e
       transaction = e.payload.is_a?(Hash) ? e.payload["transaction"] : nil
       finalize_failure!(payment, transaction)
+    end
+
+    def country_code_for(name)
+      return name if name.blank? || name.length == 2
+      {
+        "united states" => "US", "usa" => "US",
+        "canada" => "CA", "united kingdom" => "GB",
+        "australia" => "AU", "mexico" => "MX"
+      }.fetch(name.downcase.strip, name)
     end
 
     def finalize_success!(payment, transaction)

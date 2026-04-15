@@ -16,23 +16,33 @@ class GhlService
 
   def update_contact(contact_id, custom_fields)
     puts "Updating GHL contact #{contact_id}."
-    
+
     body = {
       customFields: custom_fields.map { |id, value| { id: id, value: value } }
     }
-    
-    url = "/contacts/#{contact_id}?locationId=#{@location_id}"    
+
+    url = "/contacts/#{contact_id}?locationId=#{@location_id}"
     puts "Sending request to GHL API..."
     response = self.class.put(url, @options.merge(body: body.to_json))
-    
-    puts "GHL Response Status: #{response.code}"    
-    result = {
+
+    puts "GHL Response Status: #{response.code}"
+    {
       success: response.code.to_i.between?(200, 299),
-      status: response.code.to_i,
-      body: (JSON.parse(response.body) rescue response.body)
+      status:  response.code.to_i,
+      body:    (JSON.parse(response.body) rescue response.body)
     }
-    
-    result
+  end
+
+  # Fetch a single contact by ID — returns full contact hash including
+  # address1, city, state, postalCode, country, email, phone.
+  def get_contact(contact_id)
+    url = "/contacts/#{contact_id}"
+    response = self.class.get(url, @options)
+    {
+      success: response.code.to_i.between?(200, 299),
+      status:  response.code.to_i,
+      body:    (JSON.parse(response.body) rescue response.body)
+    }
   end
 
   def search_contacts(email)
@@ -45,10 +55,10 @@ class GhlService
     response = self.class.get(url, @options)
     result = {
       success: response.code.to_i.between?(200, 299),
-      status: response.code.to_i,
-      body: (JSON.parse(response.body) rescue response.body)
+      status:  response.code.to_i,
+      body:    (JSON.parse(response.body) rescue response.body)
     }
-    
+
     puts "GHL Search Final Result: #{result[:success] ? 'SUCCESS' : 'FAILED'}"
     result
   end

@@ -137,6 +137,11 @@ class RecurringChargeService
   # ── Spreedly purchase ────────────────────────────────────────────────────────
 
   def attempt_purchase!(payment_method)
+    # Ensure we have the latest billing data from GHL before charging.
+    # This is a no-op if all required fields are already present on the user.
+    GhlBillingSyncService.new(user).sync_if_needed! rescue nil
+    user.reload
+
     amount_cents = (payment.total_payment_including_fee.to_d * 100).to_i
 
     payload = {
@@ -145,9 +150,26 @@ class RecurringChargeService
         amount:               amount_cents,
         currency_code:        "USD",
         retain_on_success:    false,
-        description:          "Installment payment — #{plan.name}"
+        description:          "Installment payment \u2014 #{plan.name}",
+        # ── Stripe Radar required signals ──────────────────────────────────────
+        # Passing email, name, and billing address dramatically improves fraud
+        # model accuracy and prevents Radar from blocking legitimate charges.
+        # See: https://docs.stripe.com/radar/optimize-risk-factors
+        email:                user.email.presence,
+        billing_address: {
+          name:         user.full_name.presence,
+          address1:     user.address_street.presence,
+          city:         user.city.presence,
+          state:        user.state.presence,
+          zip:          user.postal_code.presence,
+          country:      (user.country.presence || "US").then { |c| c.length > 2 ? country_code(c) : c }
+        }.compact
       }
     }
+
+    # Remove billing_address key entirely if empty (avoid sending blank hash)
+    payload[:transaction].delete(:billing_address) if payload.dig(:transaction, :billing_address)&.empty?
+    payload[:transaction].delete(:email) if payload.dig(:transaction, :email).blank?
 
     workflow_key = ENV["SPREEDLY_WORKFLOW_KEY"].presence || ENV["SPREEDLY_COMPOSER_WORKFLOW_KEY"].presence
     payload[:transaction][:workflow_key] = workflow_key if workflow_key.present?
@@ -159,6 +181,16 @@ class RecurringChargeService
 
     response = client.post("/transactions/purchase.json", body: payload)
     response.fetch("transaction")
+  end
+
+  # Convert common country names to ISO 3166-1 alpha-2 codes for Spreedly.
+  def country_code(name)
+    return name if name.blank? || name.length == 2
+    {
+      "united states" => "US", "usa" => "US", "u.s.a." => "US",
+      "canada" => "CA", "united kingdom" => "GB", "uk" => "GB",
+      "australia" => "AU", "mexico" => "MX"
+    }.fetch(name.downcase.strip, name)
   end
 
   # ── Success path ─────────────────────────────────────────────────────────────

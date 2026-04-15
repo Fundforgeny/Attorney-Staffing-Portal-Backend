@@ -64,19 +64,47 @@ class SpreedlyService
   def purchase_payment(payment, vault_token)
     amount_in_cents = (payment.total_payment_including_fee * 100).to_i
 
+    # Build billing address from user record (populated at checkout time).
+    billing = {
+      name:     @user.full_name.presence,
+      address1: @payment_params[:billing_address1].presence || @user.address_street.presence,
+      city:     @payment_params[:billing_city].presence     || @user.city.presence,
+      state:    @payment_params[:billing_state].presence    || @user.state.presence,
+      zip:      @payment_params[:billing_zip].presence      || @user.postal_code.presence,
+      country:  (@payment_params[:billing_country].presence || @user.country.presence || "US")
+                  .then { |c| c.length > 2 ? country_code_for(c) : c }
+    }.compact
+
+    email = @payment_params[:billing_email].presence || @user.email.presence
+
     payload = {
       transaction: {
         payment_method_token: vault_token,
-        amount: amount_in_cents,
-        currency_code: "USD",
-        retain_on_success: payment.payment_type == "down_payment"
+        amount:               amount_in_cents,
+        currency_code:        "USD",
+        retain_on_success:    payment.payment_type == "down_payment",
+        # ── Stripe Radar required signals ──────────────────────────────────────
+        email:                email
+      }.tap { |t|
+        t[:billing_address] = billing unless billing.empty?
+        t.delete(:email) if t[:email].blank?
       }
     }
+
     workflow_key = composer_workflow_key
     payload[:transaction][:workflow_key] = workflow_key if workflow_key.present?
-  
+
     response = @client.post("/transactions/purchase.json", body: payload)
     response.fetch("transaction")
+  end
+
+  def country_code_for(name)
+    return name if name.blank? || name.length == 2
+    {
+      "united states" => "US", "usa" => "US",
+      "canada" => "CA", "united kingdom" => "GB",
+      "australia" => "AU", "mexico" => "MX"
+    }.fetch(name.downcase.strip, name)
   end
 
   def update_payment_method
