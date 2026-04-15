@@ -36,13 +36,14 @@ class GhlInboundWebhookWorker
   private
 
   def payload_for(payment:, plan:, event_name:)
-    user = payment.user
-    agreement = plan.agreement
+    user          = payment.user
+    agreement     = plan.agreement
     total_payment = plan.total_payment.to_d
     total_interest = plan.total_interest_amount.to_d
-    total_amount = total_payment + total_interest
+    total_amount  = total_payment + total_interest
     next_payment_due = plan.next_payment_at || plan.calculated_next_payment_at
     status = event_name.presence || GhlInboundWebhookService.default_event_for_payment(payment)
+
     # overdue when: payment explicitly failed, needs new card, or the plan's next due date has passed
     is_overdue = status == GhlInboundWebhookService::PAYMENT_FAILED_EVENT ||
                  status == GhlInboundWebhookService::NEEDS_NEW_CARD_EVENT ||
@@ -53,37 +54,59 @@ class GhlInboundWebhookWorker
     # If payment_amount == total_amount, client paid everything upfront — down_payment equals payment_amount
     down_payment = payment_amount.to_d == total_amount ? payment_amount.to_d : plan.down_payment.to_d
 
-    # Include retry metadata so GHL workflows can branch on attempt number and card status.
+    # Installment amount: monthly payment for payment plans; equals payment_amount for PIF
+    installment_amount = plan.monthly_payment.to_d.nonzero? || payment_amount.to_d
+
+    # Remaining balance: never negative — floor at 0
+    remaining_balance = [plan.remaining_balance_logic.to_d, 0].max
+
+    # Retry metadata
     retry_count    = payment.respond_to?(:retry_count) ? payment.retry_count.to_i : 0
     needs_new_card = payment.respond_to?(:needs_new_card?) && payment.needs_new_card?
+    decline_reason = payment.respond_to?(:decline_reason) ? payment.decline_reason.to_s.presence || "none" : "none"
+
+    # Date fields — always return a string, never nil
+    next_payment_date_str = next_payment_due&.in_time_zone&.strftime("%m/%d/%Y") || "N/A"
+    next_payment_due_str  = next_payment_due&.in_time_zone&.iso8601 || "N/A"
+    last_paid_str         = payment.paid_at&.in_time_zone&.iso8601 || "N/A"
+    date_processed_str    = payment.paid_at&.in_time_zone&.iso8601 || Time.current.iso8601
+
+    # Document URLs — always return a string
+    financing_url  = agreement&.pdf&.attached? ? agreement.pdf.url : "N/A"
+    engagement_url = agreement&.engagement_pdf&.attached? ? agreement.engagement_pdf.url : "N/A"
 
     {
-      email:          user.email.presence || "NA",
-      first_name:     user.first_name.presence || "NA",
-      last_name:      user.last_name.presence || "NA",
-      phone:          user.phone.presence || "NA",
-      payment_type:   normalized_payment_type(plan, payment),
-      payment_status: status,
-      status:         status,
-      trigger:        status,
-      firm_name:      resolve_firm_name(user),
-      down_payment:        down_payment,
-      payment_amount:      payment_amount,
-      installment_amount:  plan.monthly_payment.to_d,
-      total_amount:        total_amount,
-      remaining_balance:   plan.remaining_balance_logic.to_d,
-      overdue:        is_overdue ? "overdue" : "paying",
-      next_payment_date: next_payment_due&.in_time_zone&.strftime("%m/%d/%Y"),
-      next_payment_due:  next_payment_due&.in_time_zone&.iso8601,
-      last_paid:         payment.paid_at&.in_time_zone&.iso8601,
-      date_processed:    payment.paid_at&.in_time_zone&.iso8601 || Time.current.iso8601,
-      login_magic_link:  generate_magic_link(user),
-      financing_agreement_url: agreement&.pdf&.attached? ? agreement.pdf.url : "NA",
-      engagement_letter_url:   agreement&.engagement_pdf&.attached? ? agreement.engagement_pdf.url : "NA",
-      retry_count:    retry_count,
-      needs_new_card: needs_new_card ? "yes" : "no",
-      decline_reason: payment.respond_to?(:decline_reason) ? payment.decline_reason.to_s : ""
+      email:                   user.email.presence || "N/A",
+      first_name:              user.first_name.presence || "N/A",
+      last_name:               user.last_name.presence || "N/A",
+      phone:                   user.phone.presence || "N/A",
+      payment_type:            normalized_payment_type(plan, payment),
+      payment_status:          status,
+      status:                  status,
+      trigger:                 status,
+      firm_name:               resolve_firm_name(user),
+      down_payment:            format_amount(down_payment),
+      payment_amount:          format_amount(payment_amount),
+      installment_amount:      format_amount(installment_amount),
+      total_amount:            format_amount(total_amount),
+      remaining_balance:       format_amount(remaining_balance),
+      overdue:                 is_overdue ? "overdue" : "paying",
+      next_payment_date:       next_payment_date_str,
+      next_payment_due:        next_payment_due_str,
+      last_paid:               last_paid_str,
+      date_processed:          date_processed_str,
+      login_magic_link:        generate_magic_link(user) || "N/A",
+      financing_agreement_url: financing_url,
+      engagement_letter_url:   engagement_url,
+      retry_count:             retry_count,
+      needs_new_card:          needs_new_card ? "yes" : "no",
+      decline_reason:          decline_reason
     }
+  end
+
+  # Format monetary amounts as a 2-decimal string so GHL never receives a raw BigDecimal
+  def format_amount(value)
+    "%.2f" % value.to_d
   end
 
   def normalized_payment_type(plan, payment)
