@@ -2,7 +2,9 @@ class Api::V1::PaymentMethodsController < ActionController::API
   include ApiResponse
   include Devise::Controllers::Helpers
 
-  before_action :authenticate_user!
+  # Support both Devise session auth (admin portal) and JWT auth (customer portal).
+  # JWT is checked first; if no JWT token is present, fall back to Devise.
+  before_action :authenticate_any!
   before_action :set_payment_method, only: [ :show, :update, :destroy, :set_default ]
 
   def index
@@ -34,14 +36,22 @@ class Api::V1::PaymentMethodsController < ActionController::API
     )
 
     created = payment_method.new_record?
+    is_default = ActiveModel::Type::Boolean.new.cast(create_params[:is_default]) || current_user.payment_methods.blank?
 
     ActiveRecord::Base.transaction do
-      if ActiveModel::Type::Boolean.new.cast(create_params[:is_default]) || current_user.payment_methods.blank?
+      if is_default
         current_user.payment_methods.update_all(is_default: false)
         payment_method.is_default = true
       end
       payment_method.save!
     end
+
+    # When a new card is added (or set as default), immediately retry any payments
+    # that were blocked because the customer needed a new card. This covers the case
+    # where a recurring charge exhausted retries and set needs_new_card=true — the
+    # customer adds a new card and we charge right away instead of waiting for the
+    # next scheduled sweep.
+    retry_blocked_payments!(payment_method) if created || is_default
 
     render_success(
       data: serialize_payment_method(payment_method, spreedly_payment_method: spreedly_payment_method),
@@ -75,6 +85,9 @@ class Api::V1::PaymentMethodsController < ActionController::API
       )
     end
 
+    # If this card is now the default, retry any blocked payments.
+    retry_blocked_payments!(@payment_method) if @payment_method.is_default?
+
     render_success(data: serialize_payment_method(@payment_method, spreedly_payment_method: spreadly_updated), message: "Payment method updated successfully", status: :ok)
   rescue ActiveRecord::RecordInvalid => e
     render_error(errors: e.record.errors.full_messages, status: :unprocessable_entity)
@@ -87,6 +100,9 @@ class Api::V1::PaymentMethodsController < ActionController::API
       current_user.payment_methods.update_all(is_default: false)
       @payment_method.update!(is_default: true)
     end
+
+    # Retry blocked payments now that a new default card is set.
+    retry_blocked_payments!(@payment_method)
 
     render_success(data: serialize_payment_method(@payment_method, spreedly_payment_method: spreedly_payment_method_snapshot(@payment_method)), message: "Default payment method updated", status: :ok)
   end
@@ -114,6 +130,69 @@ class Api::V1::PaymentMethodsController < ActionController::API
   end
 
   private
+
+  # ── Authentication ────────────────────────────────────────────────────────────
+  #
+  # Accepts both:
+  #   1. JWT Bearer token (customer portal magic-link sessions)
+  #   2. Devise session / token (admin portal, existing integrations)
+  #
+  def authenticate_any!
+    # Try JWT first — present when the customer portal sends Authorization: Bearer <jwt>
+    auth_header = request.headers["Authorization"].to_s
+    if auth_header.start_with?("Bearer ")
+      token = auth_header.split(" ").last
+      begin
+        payload = Warden::JWTAuth::TokenDecoder.new.call(token)
+        @jwt_user = User.find_by(id: payload["sub"])
+        return if @jwt_user.present?
+      rescue JWT::DecodeError, Warden::JWTAuth::Errors::RevokedToken
+        # Fall through to Devise auth below
+      end
+    end
+
+    # Fall back to Devise session auth (admin portal / standard sessions)
+    authenticate_user!
+  end
+
+  # Override current_user so all actions work regardless of auth method.
+  def current_user
+    @jwt_user || super
+  end
+
+  # ── Charge retry on card add / set-default ────────────────────────────────────
+  #
+  # When a customer adds a new card or sets a card as default, immediately retry
+  # any payments that were blocked because the previous card failed and
+  # needs_new_card was set to true. This mirrors the Account Updater retry logic
+  # in SpreedlyAccountUpdaterWorker#requeue_blocked_payments!
+  #
+  def retry_blocked_payments!(payment_method)
+    # Find all failed payments across the user's active plans that need a new card.
+    blocked = Payment
+      .joins(:plan)
+      .where(plans: { user_id: current_user.id, status: [ Plan.statuses[:draft], Plan.statuses[:payment_pending] ] })
+      .where(needs_new_card: true)
+      .where(status: Payment.statuses[:failed])
+      .where(payment_type: Payment.payment_types[:monthly_payment])
+
+    return if blocked.empty?
+
+    blocked.each do |payment|
+      payment.update_columns(
+        needs_new_card: false,
+        decline_reason: nil,
+        status:         Payment.statuses[:pending],
+        next_retry_at:  Time.current,
+        payment_method_id: payment_method.id,
+        updated_at:     Time.current
+      )
+      ChargePaymentWorker.perform_async(payment.id)
+      Rails.logger.info("[PaymentMethodsController] Requeued payment_id=#{payment.id} for immediate charge after card add/update (user_id=#{current_user.id})")
+    end
+
+    Rails.logger.info("[PaymentMethodsController] Retried #{blocked.size} blocked payment(s) for user_id=#{current_user.id} after card add")
+  end
 
   def set_payment_method
     @payment_method = current_user.payment_methods.find_by(id: params[:id])
