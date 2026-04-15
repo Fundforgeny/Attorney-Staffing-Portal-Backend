@@ -1,6 +1,9 @@
 class GhlInboundWebhookWorker
   include Sidekiq::Worker
 
+  # Minimum seconds between webhook fires for the same user (prevents duplicate/rapid-fire GHL triggers)
+  THROTTLE_SECONDS = 90
+
   def perform(payment_id, event_name = nil, _request_headers = nil)
     payment = Payment.find(payment_id)
     plan    = payment.plan
@@ -14,6 +17,19 @@ class GhlInboundWebhookWorker
       Rails.logger.warn("[GHL Payment Webhook Worker] Skipping — user has no email or phone, user_id=#{user.id}")
       return :no_contact_identity
     end
+
+    # Throttle: skip if we fired a webhook for this user within the last THROTTLE_SECONDS seconds.
+    # Re-enqueue with a delay so the job runs after the throttle window expires.
+    throttle_key = "ghl_webhook_throttle:user:#{user.id}"
+    redis = Sidekiq.redis { |r| r }
+    if redis.get(throttle_key)
+      ttl = redis.ttl(throttle_key)
+      Rails.logger.info("[GHL Payment Webhook Worker] Throttled — re-enqueuing payment_id=#{payment.id} in #{ttl}s")
+      self.class.perform_in(ttl + 1, payment_id, event_name)
+      return :throttled
+    end
+    # Set throttle lock for THROTTLE_SECONDS
+    redis.setex(throttle_key, THROTTLE_SECONDS, "1")
 
     webhook_url = GhlInboundWebhookService.resolve_webhook_url
     if webhook_url.blank?
