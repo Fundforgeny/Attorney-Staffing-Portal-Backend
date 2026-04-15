@@ -17,7 +17,7 @@ class UserPlanCreationService
 
   def create_or_find_user
     full_name = @user_params[:name]
-    email = @user_params[:email]
+    email = @user_params[:email].to_s.strip.downcase
 
     first_name, last_name = User.new.split_name(full_name)
     user = User.find_or_initialize_by(email: email)

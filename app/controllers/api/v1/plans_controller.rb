@@ -176,6 +176,7 @@ class Api::V1::PlansController < ActionController::API
   end
 
   def find_or_create_user!(email)
+    email = email.to_s.strip.downcase
     user = User.find_or_initialize_by(email: email)
     name_param = normalized_create_params[:name].to_s.strip
     if user.new_record?

@@ -17,12 +17,19 @@ class Api::V1::MagicLinksController < ActionController::API
       full_name = params[:name].to_s.strip
       first_name, last_name = full_name.split(" ", 2)
 
-      user = User.find_or_initialize_by(email: params[:email])
+      normalized_email = params[:email].to_s.strip.downcase
+      normalized_phone  = params[:phone].to_s.gsub(/\D/, '')
+
+      # Find by email first, then fall back to phone to prevent duplicate users
+      user = User.find_by(email: normalized_email)
+      user ||= User.find_by(phone: normalized_phone) if normalized_phone.present?
+      user ||= User.new(email: normalized_email)
 
       user.assign_attributes(
         first_name: first_name,
         last_name: last_name || "",
-        phone: params[:phone]
+        phone: normalized_phone.presence || user.phone,
+        email: normalized_email
       )
       
       # Find firm by location_id
