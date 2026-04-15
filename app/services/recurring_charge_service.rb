@@ -120,6 +120,17 @@ class RecurringChargeService
       return { success: false, rescheduled: false, exhausted: true, reason: "no_vault_token" }
     end
 
+    # Validate vault token is still active in Spreedly before attempting charge.
+    # Tokens can be auto-redacted after ~90 days without a successful charge or retain call.
+    # If the token is expired/redacted, treat it the same as no card — clear the stale
+    # token and fire the GHL needs-new-card notification.
+    if vault_token_expired?(payment_method.vault_token)
+      Rails.logger.warn("[RecurringCharge] Vault token expired/redacted for payment_id=#{payment.id} user=#{user.email} — clearing token and notifying")
+      payment_method.update_columns(vault_token: nil, updated_at: Time.current)
+      handle_no_card!
+      return { success: false, rescheduled: false, exhausted: true, reason: "vault_token_expired" }
+    end
+
     transaction = attempt_purchase!(payment_method)
 
     if transaction_succeeded?(transaction)
@@ -304,6 +315,32 @@ class RecurringChargeService
       payment.id,
       GhlInboundWebhookService::NEEDS_NEW_CARD_EVENT
     )
+
+    Rails.logger.warn("[RecurringCharge] NO CARD payment_id=#{payment.id} user=#{user.email} — GHL needs_new_card notification fired")
+  end
+
+  # ── Vault token validation ────────────────────────────────────────────────────
+
+  # Returns true if the vault token no longer exists in Spreedly (404 response).
+  # Spreedly auto-redacts payment methods after ~90 days without a successful
+  # charge or explicit retain call. A 404 means the token is gone and cannot be
+  # charged — the client must re-enter their card details.
+  def vault_token_expired?(vault_token)
+    return false if vault_token.blank?
+    response = client.get("/payment_methods/#{vault_token}.json")
+    # If we get a response without error, the token is valid.
+    pm = response.is_a?(Hash) ? response["payment_method"] : nil
+    return true if pm.nil?
+    # Also treat explicitly redacted tokens as expired.
+    pm["storage_state"].to_s == "redacted"
+  rescue Spreedly::Error => e
+    # 404 or any error fetching the payment method means it's gone.
+    Rails.logger.warn("[RecurringCharge] Vault token lookup failed for user=#{user.email}: #{e.message}")
+    true
+  rescue StandardError => e
+    # On unexpected errors, do NOT block the charge — assume token is valid.
+    Rails.logger.error("[RecurringCharge] Vault token validation error for user=#{user.email}: #{e.class}: #{e.message}")
+    false
   end
 
   # ── Hard decline detection ────────────────────────────────────────────────────
