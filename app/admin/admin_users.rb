@@ -73,6 +73,9 @@ ActiveAdmin.register AdminUser do
 
       if error.nil?
         if @admin_user.update(password: new_pw, password_confirmation: confirm)
+          # Re-sign-in to prevent Devise from invalidating the session after
+          # the encrypted_password changes (only needed when resetting own account)
+          bypass_sign_in(@admin_user) if current_admin_user == @admin_user
           flash[:notice] = "Password for #{@admin_user.email} has been reset successfully."
           redirect_to admin_admin_user_path(@admin_user) and return
         else
