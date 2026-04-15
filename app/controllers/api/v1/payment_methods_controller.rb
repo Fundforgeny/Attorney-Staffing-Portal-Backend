@@ -8,6 +8,10 @@ class Api::V1::PaymentMethodsController < ActionController::API
   before_action :set_payment_method, only: [ :show, :update, :destroy, :set_default ]
 
   def index
+    # Auto-clean stale/invalid cards before returning the list.
+    # Removes cards with no expiry data ("Not available") and already-redacted cards.
+    # This keeps only active, valid cards and avoids Spreedly per-card storage costs.
+    auto_cleanup_stale_payment_methods!
     payment_methods = current_user.payment_methods.ordered_for_user
     render_success(data: payment_methods.map { |payment_method| serialize_payment_method(payment_method, spreedly_payment_method: spreedly_payment_method_snapshot(payment_method)) }, status: :ok)
   end
@@ -192,6 +196,54 @@ class Api::V1::PaymentMethodsController < ActionController::API
     end
 
     Rails.logger.info("[PaymentMethodsController] Retried #{blocked.size} blocked payment(s) for user_id=#{current_user.id} after card add")
+  end
+
+  # ── Stale card auto-cleanup ───────────────────────────────────────────────────
+  #
+  # Silently removes payment methods that are clearly stale or invalid:
+  #   1. Cards with no exp_month or exp_year ("Not available" in the UI)
+  #   2. Cards already marked as redacted (spreedly_redacted_at is set)
+  #   3. Cards with no vault_token (orphaned local records)
+  #
+  # For cards with a vault_token but no expiry, we attempt to redact them in
+  # Spreedly first (to stop being charged for storage), then delete locally.
+  # Errors are swallowed so the index action always succeeds.
+  #
+  def auto_cleanup_stale_payment_methods!
+    stale = current_user.payment_methods.where(
+      "(exp_month IS NULL OR exp_year IS NULL OR vault_token IS NULL) OR spreedly_redacted_at IS NOT NULL"
+    )
+    return if stale.empty?
+
+    spreedly_service = Spreedly::PaymentMethodsService.new
+    had_default = stale.any?(&:is_default?)
+
+    stale.each do |pm|
+      begin
+        if pm.vault_token.present? && pm.spreedly_redacted_at.nil?
+          spreedly_service.redact_payment_method(token: pm.vault_token)
+        end
+      rescue Spreedly::Error => e
+        # Already gone in Spreedly — still delete locally
+        Rails.logger.warn("[AutoCleanup] Spreedly redact failed for pm_id=#{pm.id}: #{e.message}")
+      rescue StandardError => e
+        Rails.logger.warn("[AutoCleanup] Unexpected error redacting pm_id=#{pm.id}: #{e.message}")
+      end
+      begin
+        pm.destroy!
+      rescue StandardError => e
+        Rails.logger.warn("[AutoCleanup] Failed to destroy pm_id=#{pm.id}: #{e.message}")
+      end
+    end
+
+    # If the default card was removed, promote the most recently created remaining card.
+    if had_default && current_user.payment_methods.where(is_default: true).none?
+      current_user.payment_methods.order(created_at: :desc).first&.update!(is_default: true)
+    end
+
+    Rails.logger.info("[AutoCleanup] Removed #{stale.size} stale payment method(s) for user_id=#{current_user.id}")
+  rescue StandardError => e
+    Rails.logger.error("[AutoCleanup] Unexpected error during stale card cleanup for user_id=#{current_user.id}: #{e.message}")
   end
 
   def set_payment_method
