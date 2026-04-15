@@ -91,10 +91,18 @@ class SpreedlyService
       }
     }
 
+    # Route through Composer workflow endpoint so the workflow_token is populated
+    # on the transaction and Spreedly's recovery/retry logic is engaged.
+    # The Core API (/transactions/purchase.json) ignores workflow_key in the body;
+    # the correct approach is to POST to /workflows/{key}/purchase.json.
     workflow_key = composer_workflow_key
-    payload[:transaction][:workflow_key] = workflow_key if workflow_key.present?
+    purchase_path = if workflow_key.present?
+                     "/workflows/#{workflow_key}/purchase.json"
+                   else
+                     "/transactions/purchase.json"
+                   end
 
-    response = @client.post("/transactions/purchase.json", body: payload)
+    response = @client.post(purchase_path, body: payload)
     response.fetch("transaction")
   end
 
