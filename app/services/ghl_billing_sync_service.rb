@@ -6,6 +6,12 @@
 # Used by RecurringChargeService before each charge attempt to ensure we
 # always pass complete billing data to Stripe/Spreedly (required for Radar).
 #
+# PRIORITY ORDER (law firm first):
+#   1. Law firm GHL sub-account (Titans Law, Ironclad, etc.) via firm.ghl_api_key
+#      and firm_users.contact_id — this is where billing address lives.
+#   2. Fund Forge GHL sub-account via firm_users.ghl_fund_forge_id — fallback
+#      only when no law firm record exists.
+#
 # Usage:
 #   GhlBillingSyncService.new(user).sync_if_needed!
 #
@@ -27,6 +33,15 @@ class GhlBillingSyncService
     update_user_from_contact!(contact_data)
   end
 
+  # Force-syncs all fields from GHL regardless of whether they are already set.
+  # Useful for bulk backfill runs.
+  def force_sync!
+    contact_data = fetch_ghl_contact
+    return false unless contact_data
+
+    update_user_from_contact!(contact_data, force: true)
+  end
+
   # Returns true only if all Stripe Radar required fields are present.
   def billing_complete?
     @user.email.present? &&
@@ -40,53 +55,76 @@ class GhlBillingSyncService
 
   attr_reader :user
 
-  # Try Fund Forge GHL first (ghl_fund_forge_id), then the law firm GHL (contact_id).
+  # Always try the law firm GHL first — that is where billing address is stored.
+  # Fall back to Fund Forge GHL only if no law firm record exists.
   def fetch_ghl_contact
-    # 1. Fund Forge sub-account
-    ff_firm_user = FirmUser.joins(:firm)
-                           .where(user: user, firms: { name: FUND_FORGE_FIRM_NAME })
-                           .first
-    if ff_firm_user&.ghl_fund_forge_id.present?
-      result = ghl_service_for(ENV["FUND_FORGE_API_KEY"], ENV["FUND_FORGE_LOCATION_ID"])
-                 &.get_contact(ff_firm_user.ghl_fund_forge_id)
-      return result[:body]["contact"] if result&.dig(:success) && result[:body].is_a?(Hash)
-    end
-
-    # 2. Law firm GHL sub-account
+    # 1. Law firm GHL sub-account (Titans Law, Ironclad, etc.)
+    #    Uses firm.ghl_api_key + firm.location_id + firm_users.contact_id
     law_firm_user = FirmUser.joins(:firm)
                             .where(user: user)
                             .where.not(firms: { name: FUND_FORGE_FIRM_NAME })
                             .where.not(contact_id: [nil, ""])
+                            .order(updated_at: :desc)
                             .first
+
     if law_firm_user&.contact_id.present?
       firm = law_firm_user.firm
-      result = ghl_service_for(firm.ghl_api_key, firm.ghl_location_id)
-                 &.get_contact(law_firm_user.contact_id)
-      return result[:body]["contact"] if result&.dig(:success) && result[:body].is_a?(Hash)
+      if firm.ghl_api_key.present? && firm.location_id.present?
+        result = GhlService.new(firm.ghl_api_key, firm.location_id)
+                           .get_contact(law_firm_user.contact_id)
+        if result[:success] && result[:body].is_a?(Hash)
+          contact = result[:body]["contact"]
+          Rails.logger.info("[GhlBillingSync] Fetched contact from law firm GHL: firm=#{firm.name} user_id=#{user.id}")
+          return contact if contact
+        else
+          Rails.logger.warn("[GhlBillingSync] Law firm GHL fetch failed: firm=#{firm.name} user_id=#{user.id} status=#{result[:status]}")
+        end
+      end
     end
 
+    # 2. Fund Forge GHL sub-account (fallback)
+    #    Uses ENV keys + firm_users.ghl_fund_forge_id
+    ff_firm_user = FirmUser.joins(:firm)
+                           .where(user: user, firms: { name: FUND_FORGE_FIRM_NAME })
+                           .first
+
+    if ff_firm_user&.ghl_fund_forge_id.present?
+      ff_firm = ff_firm_user.firm
+      api_key     = ff_firm.ghl_api_key.presence || ENV["FUND_FORGE_API_KEY"]
+      location_id = ff_firm.location_id.presence || ENV["FUND_FORGE_LOCATION_ID"]
+
+      if api_key.present? && location_id.present?
+        result = GhlService.new(api_key, location_id)
+                           .get_contact(ff_firm_user.ghl_fund_forge_id)
+        if result[:success] && result[:body].is_a?(Hash)
+          contact = result[:body]["contact"]
+          Rails.logger.info("[GhlBillingSync] Fetched contact from Fund Forge GHL (fallback): user_id=#{user.id}")
+          return contact if contact
+        else
+          Rails.logger.warn("[GhlBillingSync] Fund Forge GHL fetch failed: user_id=#{user.id} status=#{result[:status]}")
+        end
+      end
+    end
+
+    Rails.logger.warn("[GhlBillingSync] No GHL contact found for user_id=#{user.id} email=#{user.email}")
     nil
   end
 
-  def ghl_service_for(api_key, location_id)
-    return nil if api_key.blank? || location_id.blank?
-    GhlService.new(api_key, location_id)
-  end
-
-  def update_user_from_contact!(contact)
+  def update_user_from_contact!(contact, force: false)
     updates = {}
 
-    updates[:email]          = contact["email"]   if user.email.blank? && contact["email"].present?
-    updates[:phone]          = contact["phone"]   if user.phone.blank? && contact["phone"].present?
-    updates[:address_street] = contact["address1"] if user.address_street.blank? && contact["address1"].present?
-    updates[:city]           = contact["city"]    if user.city.blank? && contact["city"].present?
-    updates[:state]          = contact["state"]   if user.state.blank? && contact["state"].present?
-    updates[:postal_code]    = contact["postalCode"] if user.postal_code.blank? && contact["postalCode"].present?
-    updates[:country]        = contact["country"] if user.country.blank? && contact["country"].present?
+    # When force=true, overwrite existing values; otherwise only fill blanks.
+    should_update = ->(current_val) { force ? true : current_val.blank? }
 
-    # Also try first/last name if missing
-    updates[:first_name] = contact["firstName"] if user.first_name.blank? && contact["firstName"].present?
-    updates[:last_name]  = contact["lastName"]  if user.last_name.blank? && contact["lastName"].present?
+    updates[:email]          = contact["email"]      if should_update.call(user.email)      && contact["email"].present?
+    updates[:phone]          = contact["phone"]      if should_update.call(user.phone)      && contact["phone"].present?
+    updates[:address_street] = contact["address1"]   if should_update.call(user.address_street) && contact["address1"].present?
+    updates[:city]           = contact["city"]       if should_update.call(user.city)       && contact["city"].present?
+    updates[:state]          = contact["state"]      if should_update.call(user.state)      && contact["state"].present?
+    updates[:postal_code]    = contact["postalCode"] if should_update.call(user.postal_code) && contact["postalCode"].present?
+    updates[:country]        = contact["country"]    if should_update.call(user.country)    && contact["country"].present?
+    updates[:first_name]     = contact["firstName"]  if should_update.call(user.first_name) && contact["firstName"].present?
+    updates[:last_name]      = contact["lastName"]   if should_update.call(user.last_name)  && contact["lastName"].present?
 
     return false if updates.empty?
 
