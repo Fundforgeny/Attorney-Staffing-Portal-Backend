@@ -58,69 +58,33 @@ ActiveAdmin.register AdminUser do
   # ── Reset Password Action (GET + POST) ─────────────────────────────────────
   member_action :reset_password, method: [:get, :post] do
     @admin_user = AdminUser.find(params[:id])
-    @error      = nil
-    @success    = false
 
     if request.post?
-      new_pw   = params[:new_password].to_s.strip
-      confirm  = params[:new_password_confirmation].to_s.strip
+      new_pw  = params[:new_password].to_s.strip
+      confirm = params[:new_password_confirmation].to_s.strip
 
-      if new_pw.blank?
-        @error = "Password cannot be blank."
-      elsif new_pw.length < 8
-        @error = "Password must be at least 8 characters."
-      elsif new_pw != confirm
-        @error = "Password and confirmation do not match."
-      else
+      error = if new_pw.blank?
+                "Password cannot be blank."
+              elsif new_pw.length < 8
+                "Password must be at least 8 characters."
+              elsif new_pw != confirm
+                "Password and confirmation do not match."
+              end
+
+      if error.nil?
         if @admin_user.update(password: new_pw, password_confirmation: confirm)
           flash[:notice] = "Password for #{@admin_user.email} has been reset successfully."
           redirect_to admin_admin_user_path(@admin_user) and return
         else
-          @error = "Failed: #{@admin_user.errors.full_messages.join(', ')}"
+          flash.now[:error] = "Failed: #{@admin_user.errors.full_messages.join(', ')}"
         end
+      else
+        flash.now[:error] = error
       end
     end
 
-    # Render the form inline using Arbre
-    render layout: "active_admin" do
-      columns do
-        column do
-          panel "Reset Password for #{@admin_user.email}" do
-            if @error
-              div class: "flash flash_error" do
-                @error
-              end
-            end
-
-            active_admin_form_for @admin_user,
-                                  url: reset_password_admin_admin_user_path(@admin_user),
-                                  html: { method: :post } do |f|
-              f.inputs "New Password" do
-                f.input :password,
-                        label: "New Password",
-                        hint: "Minimum 8 characters",
-                        input_html: {
-                          name: "new_password",
-                          id: "new_password",
-                          autocomplete: "new-password"
-                        }
-                f.input :password_confirmation,
-                        label: "Confirm New Password",
-                        input_html: {
-                          name: "new_password_confirmation",
-                          id: "new_password_confirmation",
-                          autocomplete: "new-password"
-                        }
-              end
-              f.actions do
-                f.action :submit, label: "Reset Password"
-                f.cancel_link admin_admin_user_path(@admin_user)
-              end
-            end
-          end
-        end
-      end
-    end
+    @page_title = "Reset Password — #{@admin_user.email}"
+    render "admin/admin_users/reset_password", layout: "active_admin"
   end
 
   # ── Action Item Button on Show Page ────────────────────────────────────────
