@@ -61,7 +61,7 @@ class Payment < ApplicationRecord
 
     # Sum all succeeded payments for this plan within the billing period.
     total_paid_this_period = plan.payments
-      .where(status: statuses[:succeeded])
+      .where(status: Payment.statuses[:succeeded])
       .where("paid_at >= ? AND paid_at <= ?", period_start, period_end)
       .sum(:total_payment_including_fee)
       .to_d
@@ -71,14 +71,14 @@ class Payment < ApplicationRecord
     # The period is covered — cancel any open retries for this billing period.
     open_retries = plan.payments
       .monthly_payment
-      .where(status: [ statuses[:pending], statuses[:processing] ])
+      .where(status: [ Payment.statuses[:pending], Payment.statuses[:processing] ])
       .where.not(id: id)  # Don't cancel the payment that just succeeded
       .where("scheduled_at >= ? AND scheduled_at <= ?", period_start, period_end)
 
     return if open_retries.empty?
 
     open_retries.update_all(
-      status:         statuses[:failed],
+      status:         Payment.statuses[:failed],
       needs_new_card: false,
       decline_reason: "covered_by_payment_id_#{id}",
       updated_at:     Time.current
