@@ -1,10 +1,11 @@
 module Admin
   class ManualVaultChargeService
-    def initialize(plan:, amount:, description: nil)
+    def initialize(plan:, amount:, description: nil, payment_method: nil)
       @plan = plan
       @user = plan.user
       @amount = parse_amount(amount)
       @description = description.to_s.presence || "Admin manual payment"
+      @explicit_payment_method = payment_method
       @client = Spreedly::Client.new
     end
 
@@ -35,7 +36,7 @@ module Admin
     end
 
     def payment_method
-      @payment_method ||= user.payment_methods.ordered_for_user.first
+      @payment_method ||= @explicit_payment_method || user.payment_methods.ordered_for_user.first
     end
 
     def create_payment!
