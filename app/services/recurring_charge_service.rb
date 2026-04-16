@@ -199,7 +199,7 @@ class RecurringChargeService
     payload[:transaction].delete(:billing_address) if payload.dig(:transaction, :billing_address)&.empty?
     payload[:transaction].delete(:email) if payload.dig(:transaction, :email).blank?
 
-    workflow_key = ENV["SPREEDLY_WORKFLOW_KEY"].presence || ENV["SPREEDLY_COMPOSER_WORKFLOW_KEY"].presence
+    workflow_key = ENV["SPREEDLY_WORKFLOW_KEY"].presence || ENV["SPREEDLY_COMPOSER_WORKFLOW_KEY"].presence || "01KFECKTHBXNNDGX1A4RSDDCKJ"
     payload[:transaction][:workflow_key] = workflow_key if workflow_key.present?
 
     payment.update_columns(

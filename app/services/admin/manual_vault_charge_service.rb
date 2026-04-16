@@ -85,7 +85,7 @@ module Admin
         }
       }
 
-      workflow_key = ENV["SPREEDLY_WORKFLOW_KEY"].presence || ENV["SPREEDLY_COMPOSER_WORKFLOW_KEY"].presence
+      workflow_key = ENV["SPREEDLY_WORKFLOW_KEY"].presence || ENV["SPREEDLY_COMPOSER_WORKFLOW_KEY"].presence || "01KFECKTHBXNNDGX1A4RSDDCKJ"
       payload[:transaction][:workflow_key] = workflow_key if workflow_key.present?
 
       response = client.post("/transactions/purchase.json", body: payload)
