@@ -76,19 +76,18 @@ ActiveAdmin.register User do
 
     panel "Plans for this User" do
       if user.plans.any?
-        table_for user.plans do
-          column :name
+        table_for user.plans.order(created_at: :desc) do
+          column("Name")    { |plan| link_to plan.name, admin_plan_path(plan) }
           column :duration
-          column :total_payment
-          column :total_interest_amount
-          column :monthly_payment
-          column :monthly_interest_amount
-          column :down_payment
+          column("Total")   { |plan| number_to_currency(plan.total_payment) }
+          column("Monthly") { |plan| number_to_currency(plan.monthly_payment) }
+          column("Down")    { |plan| number_to_currency(plan.down_payment) }
           column :status do |plan|
             status_tag plan.status
           end
-          column("Next Payment Date") { |plan| plan.next_payment_at }
+          column("Next Payment") { |plan| plan.next_payment_at&.strftime("%b %-d, %Y") || "—" }
           column :created_at
+          column("Actions")  { |plan| link_to "View Plan →", admin_plan_path(plan), class: "button" }
         end
       else
         para "No plans found"

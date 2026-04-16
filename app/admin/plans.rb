@@ -4,12 +4,12 @@ ActiveAdmin.register Plan do
                 :status, :user_id
 
   # ── Scopes ────────────────────────────────────────────────────────────────
-  controller do
-    def scoped_collection
-      return super unless action_name == "index"
-      super.where(status: Plan.statuses[:paid])
-    end
-  end
+  scope :all, default: true
+  scope("Draft")           { |q| q.where(status: :draft) }
+  scope("Payment Pending") { |q| q.where(status: :payment_pending) }
+  scope("Paid")            { |q| q.where(status: :paid) }
+  scope("Failed")          { |q| q.where(status: :failed) }
+  scope("Agreement Generated") { |q| q.where(status: :agreement_generated) }
 
   # ── Filters ───────────────────────────────────────────────────────────────
   filter :name
