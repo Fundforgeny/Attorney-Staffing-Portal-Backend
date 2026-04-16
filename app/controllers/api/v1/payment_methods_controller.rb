@@ -28,13 +28,20 @@ class Api::V1::PaymentMethodsController < ActionController::API
     sync_attrs = spreedly_payment_method_attributes(create_params)
     spreedly_payment_method = Spreedly::PaymentMethodsService.new.update_payment_method(token: create_params[:vault_token], **sync_attrs)
 
+    # Use Spreedly response as authoritative fallback for card metadata
+    # (covers cases where the frontend's paymentMethod callback returns nil for last_four_digits)
+    spreedly_last4       = spreedly_payment_method["last_four_digits"].presence
+    spreedly_card_brand  = spreedly_payment_method["card_type"].presence
+    spreedly_exp_month   = spreedly_payment_method["month"].presence
+    spreedly_exp_year    = spreedly_payment_method["year"].presence
+
     payment_method = current_user.payment_methods.find_or_initialize_by(vault_token: create_params[:vault_token])
     payment_method.assign_attributes(
       provider: create_params[:provider].presence || payment_method.provider.presence || "Spreedly Vault",
-      last4: create_params[:last4].presence || payment_method.last4,
-      card_brand: create_params[:card_brand].presence || payment_method.card_brand,
-      exp_month: create_params[:exp_month].presence || payment_method.exp_month,
-      exp_year: create_params[:exp_year].presence || payment_method.exp_year,
+      last4: create_params[:last4].presence || spreedly_last4 || payment_method.last4,
+      card_brand: create_params[:card_brand].presence || spreedly_card_brand || payment_method.card_brand,
+      exp_month: create_params[:exp_month].presence || spreedly_exp_month || payment_method.exp_month,
+      exp_year: create_params[:exp_year].presence || spreedly_exp_year || payment_method.exp_year,
       cardholder_name: create_params[:cardholder_name].presence || payment_method.cardholder_name,
       last_updated_via_spreedly_at: Time.current
     )
@@ -219,6 +226,34 @@ class Api::V1::PaymentMethodsController < ActionController::API
     had_default = stale.any?(&:is_default?)
 
     stale.each do |pm|
+      # If the card has a vault token but missing metadata, try to recover from Spreedly
+      # before deciding to delete it. This handles cases where the card was saved but
+      # metadata (last4, exp) wasn't populated due to a frontend/callback timing issue.
+      if pm.vault_token.present? && pm.spreedly_redacted_at.nil? && (pm.exp_month.nil? || pm.exp_year.nil?)
+        begin
+          spreedly_data = spreedly_service.get_payment_method(token: pm.vault_token)
+          recovered_month = spreedly_data["month"].presence
+          recovered_year  = spreedly_data["year"].presence
+          recovered_last4 = spreedly_data["last_four_digits"].presence
+          recovered_brand = spreedly_data["card_type"].presence
+          if recovered_month.present? && recovered_year.present?
+            pm.update_columns(
+              exp_month: recovered_month,
+              exp_year:  recovered_year,
+              last4:     recovered_last4 || pm.last4,
+              card_brand: recovered_brand || pm.card_brand,
+              last_updated_via_spreedly_at: Time.current
+            )
+            Rails.logger.info("[AutoCleanup] Recovered metadata for pm_id=#{pm.id} from Spreedly")
+            next # Skip deletion — card is now valid
+          end
+        rescue Spreedly::Error => e
+          Rails.logger.warn("[AutoCleanup] Could not recover metadata for pm_id=#{pm.id}: #{e.message}")
+        rescue StandardError => e
+          Rails.logger.warn("[AutoCleanup] Unexpected error recovering pm_id=#{pm.id}: #{e.message}")
+        end
+      end
+
       begin
         if pm.vault_token.present? && pm.spreedly_redacted_at.nil?
           spreedly_service.redact_payment_method(token: pm.vault_token)
