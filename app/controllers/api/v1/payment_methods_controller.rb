@@ -26,7 +26,12 @@ class Api::V1::PaymentMethodsController < ActionController::API
     end
 
     sync_attrs = spreedly_payment_method_attributes(create_params)
-    spreedly_payment_method = Spreedly::PaymentMethodsService.new.update_payment_method(token: create_params[:vault_token], **sync_attrs)
+    spreedly_service = Spreedly::PaymentMethodsService.new
+    # Retain the token first so it persists in the vault before we attempt any update.
+    # Spreedly iframe tokens are single-use and expire quickly — retaining ensures the
+    # token survives the round-trip to our backend even under slow network conditions.
+    spreedly_service.retain_payment_method(token: create_params[:vault_token])
+    spreedly_payment_method = spreedly_service.update_payment_method(token: create_params[:vault_token], **sync_attrs)
 
     # Use Spreedly response as authoritative fallback for card metadata
     # (covers cases where the frontend's paymentMethod callback returns nil for last_four_digits)

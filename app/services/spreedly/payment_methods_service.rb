@@ -60,6 +60,11 @@ module Spreedly
       response.fetch("payment_method")
     end
 
+    def retain_payment_method(token:)
+      response = @client.put("/payment_methods/#{token}/retain.json")
+      response.fetch("transaction")
+    end
+
     def redact_payment_method(token:)
       response = @client.put("/payment_methods/#{token}/redact.json")
       response.fetch("transaction")
