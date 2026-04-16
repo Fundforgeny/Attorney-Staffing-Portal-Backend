@@ -2,7 +2,7 @@ class PaymentMethod < ApplicationRecord
   MAX_PAYMENT_METHODS_PER_USER = 20
 
   belongs_to :user
-  has_many :payments, dependent: :destroy
+  has_many :payments, dependent: :nullify
   has_many :payment_3ds_sessions, dependent: :destroy
 
   validates :stripe_payment_method_id, uniqueness: true, allow_nil: true
