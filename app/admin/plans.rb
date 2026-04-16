@@ -14,6 +14,7 @@ ActiveAdmin.register Plan do
   # ── Filters ───────────────────────────────────────────────────────────────
   filter :name
   filter :user
+  filter :user_email_cont, as: :string, label: "User Email"
   filter :duration
   filter :total_payment
   filter :monthly_payment
