@@ -56,21 +56,20 @@ ActiveAdmin.register User do
       row :annual_salary
     end
 
-    panel "Payment Method" do
-      if user.payment_method.present?
-        table_for [user.payment_method] do
-          column :provider
-          column :card_brand
-          column :card_number
-          column :card_cvc
-          column :last4
-          column :exp_month
-          column :exp_year
-          column :cardholder_name
+    panel "Payment Methods" do
+      cards = user.payment_methods.ordered_for_user
+      if cards.any?
+        table_for cards do
+          column("Brand")   { |c| c.card_brand&.upcase || "CARD" }
+          column("Last 4")  { |c| "••••#{c.last4}" }
+          column("Expires") { |c| "#{c.exp_month}/#{c.exp_year}" }
+          column("Name")    { |c| c.cardholder_name }
+          column("Default") { |c| c.is_default? ? status_tag("Default", class: "status_tag ok") : "—" }
+          column("Vault")   { |c| c.vault_token.present? ? status_tag("Vaulted", class: "status_tag ok") : status_tag("Missing", class: "status_tag error") }
           column :created_at
         end
       else
-        para "No payment method added"
+        para "No payment methods added"
       end
     end
 
