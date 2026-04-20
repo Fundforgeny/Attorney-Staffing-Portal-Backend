@@ -2,8 +2,10 @@ class Api::V1::MagicLinksController < ActionController::API
   include ApiResponse
 
   def create_user_with_magic_link
-    # Validate required parameters
-    required_params = [:name, :email, :id, :retainer_amount, :down_payment, :location_id]
+    # Only name, email, and location_id are strictly required.
+    # retainer_amount, down_payment, and id may be blank when GHL custom
+    # fields haven't been filled in yet — they default to 0 / empty string.
+    required_params = [:name, :email, :location_id]
     missing_params = required_params.select { |param| params[param].blank? }
 
     unless missing_params.empty?
