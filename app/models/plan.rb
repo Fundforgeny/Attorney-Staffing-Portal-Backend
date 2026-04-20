@@ -19,7 +19,7 @@ class Plan < ApplicationRecord
   scope :cancelled, -> { where(status: statuses[:failed]) }
 
   validates :checkout_session_id, presence: true
-  validates :total_payment, numericality: { greater_than: 0 }
+  validates :total_payment, numericality: { greater_than: 0 }, unless: :draft?
   validates :down_payment, numericality: { greater_than_or_equal_to: 0 }
   validates :duration, inclusion: { in: [ 0, 3, 6, 9, 12 ] }, allow_nil: true
 
