@@ -33,6 +33,25 @@ class GhlService
     }
   end
 
+  # Add one or more tags to a GHL contact.
+  # GHL API: PUT /contacts/:id  with body { tags: ["tag1", "tag2"] }
+  # Tags are additive — existing tags are preserved.
+  def add_tags(contact_id, tags)
+    tags = Array(tags).map(&:to_s).reject(&:blank?)
+    return { success: false, status: 0, body: "No tags provided" } if tags.empty?
+
+    url  = "/contacts/#{contact_id}"
+    body = { tags: tags }.to_json
+    Rails.logger.info("[GhlService#add_tags] contact_id=#{contact_id} tags=#{tags.inspect}")
+    response = self.class.put(url, @options.merge(body: body))
+    Rails.logger.info("[GhlService#add_tags] status=#{response.code} contact_id=#{contact_id}")
+    {
+      success: response.code.to_i.between?(200, 299),
+      status:  response.code.to_i,
+      body:    (JSON.parse(response.body) rescue response.body)
+    }
+  end
+
   # Fetch a single contact by ID — returns full contact hash including
   # address1, city, state, postalCode, country, email, phone.
   def get_contact(contact_id)

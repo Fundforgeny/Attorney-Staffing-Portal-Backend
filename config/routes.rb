@@ -134,6 +134,11 @@ Rails.application.routes.draw do
     namespace :spreedly do
       post :account_updater, to: "spreedly_account_updater#create"
     end
+
+    # Chargeflow webhook receiver
+    # Configure this URL in the Chargeflow dashboard: POST /webhooks/chargeflow
+    # Handles: alerts.created, dispute.created
+    post :chargeflow, to: "chargeflow#receive"
   end
 
   require "sidekiq/web"

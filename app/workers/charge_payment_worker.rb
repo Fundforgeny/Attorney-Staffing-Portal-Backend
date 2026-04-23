@@ -29,7 +29,9 @@ class ChargePaymentWorker
 
     # Guard: skip if this billing period has already been covered by another payment
     # (e.g. a manual portal payment was made after this retry was enqueued).
-    if billing_period_covered?(payment, plan)
+    # Chargeflow recovery payments are exempt — they represent a disputed amount
+    # being recovered and must always be attempted regardless of period coverage.
+    if !payment.chargeflow_recovery? && billing_period_covered?(payment, plan)
       Rails.logger.info("[ChargePaymentWorker] Skipping payment_id=#{payment_id} — billing period already covered")
       payment.update_columns(
         status:         Payment.statuses[:failed],

@@ -23,16 +23,18 @@ class Payment < ApplicationRecord
       total_payment_including_fee transaction_fee
       user_id plan_id payment_method_id
       retry_count last_attempt_at next_retry_at decline_reason needs_new_card
+      disputed disputed_at chargeflow_alert_id chargeflow_dispute_id chargeflow_recovery
     ]
   end
 
   enum :status, { pending: 0, processing: 1, succeeded: 2, failed: 3 }
   enum :payment_type, { down_payment: 0, monthly_payment: 1, full_payment: 2 }
 
-  scope :due_today,      -> { where(scheduled_at: Date.current.beginning_of_day..Date.current.end_of_day) }
-  scope :needs_new_card, -> { where(needs_new_card: true) }
-  scope :retryable,      -> { where(needs_new_card: false).where("retry_count > 0").where(status: [ statuses[:pending], statuses[:processing] ]) }
-  scope :due_for_retry,  -> { retryable.where("next_retry_at <= ?", Time.current.end_of_day) }
+  scope :due_today,           -> { where(scheduled_at: Date.current.beginning_of_day..Date.current.end_of_day) }
+  scope :needs_new_card,      -> { where(needs_new_card: true) }
+  scope :retryable,           -> { where(needs_new_card: false).where("retry_count > 0").where(status: [ statuses[:pending], statuses[:processing] ]) }
+  scope :due_for_retry,       -> { retryable.where("next_retry_at <= ?", Time.current.end_of_day) }
+  scope :chargeflow_recovery, -> { where(chargeflow_recovery: true) }
 
   # ── Stop-retry logic ─────────────────────────────────────────────────────────
   #
@@ -48,6 +50,9 @@ class Payment < ApplicationRecord
   #
   def cancel_open_retries_if_covered!
     return unless monthly_payment? || full_payment?
+    # Chargeflow recovery payments represent a disputed amount being recovered.
+    # They must not cancel other pending retries when they succeed.
+    return if chargeflow_recovery?
     return if plan.nil?
 
     installment_amount = plan.monthly_payment.to_d

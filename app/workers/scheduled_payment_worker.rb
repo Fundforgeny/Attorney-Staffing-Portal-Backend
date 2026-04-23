@@ -69,14 +69,16 @@ class ScheduledPaymentWorker
       .joins(:plan)
       .where.not(plans: { status: inactive_plan_statuses })
       .includes(:user, :payment_method, plan: :agreement)
-      .reject { |p| billing_period_covered?(p) }
+      .reject { |p| !p.chargeflow_recovery? && billing_period_covered?(p) }
   end
 
   # Exclude payments whose billing month has already been covered by a succeeded
   # payment (manual or automated) totalling >= the plan's installment amount.
   # This is a safety net — Payment#cancel_open_retries_if_covered! handles the
   # primary cancellation path, but this catches any that slip through.
+  # Chargeflow recovery payments are always exempt from this check.
   def billing_period_covered?(payment)
+    return false if payment.chargeflow_recovery?
     plan               = payment.plan
     installment_amount = plan.monthly_payment.to_d
     return false if installment_amount <= 0
