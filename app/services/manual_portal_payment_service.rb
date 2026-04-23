@@ -84,9 +84,10 @@ class ManualPortalPaymentService
 
   def finalize_success!(payment, transaction)
     payment.update!(
-      status:    :succeeded,
-      charge_id: transaction["token"],
-      paid_at:   Time.current
+      status:                   :succeeded,
+      charge_id:                transaction["token"],
+      processor_transaction_id: transaction["gateway_transaction_id"].presence,
+      paid_at:                  Time.current
     )
 
     plan.refresh_next_payment_at!
@@ -101,9 +102,10 @@ class ManualPortalPaymentService
 
   def finalize_failure!(payment, transaction, error_message)
     payment.update!(
-      status:         :failed,
-      charge_id:      transaction&.dig("token"),
-      decline_reason: error_message
+      status:                   :failed,
+      charge_id:                transaction&.dig("token"),
+      processor_transaction_id: transaction&.dig("gateway_transaction_id").presence,
+      decline_reason:           error_message
     )
 
     GhlInboundWebhookWorker.perform_async(

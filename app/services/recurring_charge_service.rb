@@ -225,11 +225,12 @@ class RecurringChargeService
 
   def finalize_success!(payment_method, transaction)
     payment.update!(
-      status:         :succeeded,
-      charge_id:      transaction["token"] || payment.charge_id,
-      paid_at:        Time.current,
-      decline_reason: nil,
-      needs_new_card: false
+      status:                  :succeeded,
+      charge_id:               transaction["token"] || payment.charge_id,
+      processor_transaction_id: transaction["gateway_transaction_id"].presence || payment.processor_transaction_id,
+      paid_at:                 Time.current,
+      decline_reason:          nil,
+      needs_new_card:          false
     )
 
     plan.update!(status: :paid) if plan.remaining_balance_logic <= 0
@@ -251,11 +252,12 @@ class RecurringChargeService
     window_end      = original_due + RETRY_WINDOW
 
     payment.update!(
-      status:          :failed,
-      retry_count:     new_retry_count,
-      last_attempt_at: Time.current,
-      decline_reason:  decline_reason,
-      charge_id:       transaction&.dig("token") || payment.charge_id
+      status:                   :failed,
+      retry_count:              new_retry_count,
+      last_attempt_at:          Time.current,
+      decline_reason:           decline_reason,
+      charge_id:                transaction&.dig("token") || payment.charge_id,
+      processor_transaction_id: transaction&.dig("gateway_transaction_id").presence || payment.processor_transaction_id
     )
 
     Rails.logger.warn("[RecurringCharge] FAILED payment_id=#{payment.id} attempt=#{new_retry_count} reason=#{decline_reason}")

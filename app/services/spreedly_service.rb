@@ -139,9 +139,10 @@ class SpreedlyService
   
   def update_payment_status(payment, transaction_data, status)
     payment.update!(
-      charge_id: transaction_data&.dig("token") || payment.charge_id,
-      status: status,
-      paid_at: status.to_sym == :succeeded ? Time.current : nil
+      charge_id:                transaction_data&.dig("token") || payment.charge_id,
+      processor_transaction_id: transaction_data&.dig("gateway_transaction_id").presence || payment.processor_transaction_id,
+      status:                   status,
+      paid_at:                  status.to_sym == :succeeded ? Time.current : nil
     )
   end
 

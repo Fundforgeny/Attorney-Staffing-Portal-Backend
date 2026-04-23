@@ -106,9 +106,10 @@ module Admin
 
     def finalize_success!(payment, transaction)
       payment.update!(
-        status: :succeeded,
-        charge_id: transaction["token"] || payment.charge_id,
-        paid_at: Time.current
+        status:                   :succeeded,
+        charge_id:                transaction["token"] || payment.charge_id,
+        processor_transaction_id: transaction["gateway_transaction_id"].presence || payment.processor_transaction_id,
+        paid_at:                  Time.current
       )
 
       plan.update!(status: :paid) if plan.remaining_balance_logic <= 0
@@ -119,9 +120,10 @@ module Admin
 
     def finalize_failure!(payment, transaction)
       payment.update!(
-        status: :failed,
-        charge_id: transaction&.dig("token") || payment.charge_id,
-        paid_at: nil
+        status:                   :failed,
+        charge_id:                transaction&.dig("token") || payment.charge_id,
+        processor_transaction_id: transaction&.dig("gateway_transaction_id").presence || payment.processor_transaction_id,
+        paid_at:                  nil
       )
 
       SyncDataToGhl.perform_async(user.id, payment.id)

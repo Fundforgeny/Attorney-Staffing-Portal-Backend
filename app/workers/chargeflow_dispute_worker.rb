@@ -49,7 +49,10 @@ class ChargeflowDisputeWorker
     end
 
     # ── 2. Find the matching payment ──────────────────────────────────────────
-    payment = Payment.find_by(charge_id: charge_id)
+    # Chargeflow's transactionId is the processor/gateway transaction ID,
+    # stored as processor_transaction_id on our payments.
+    payment = Payment.find_by(processor_transaction_id: charge_id)
+    payment ||= Payment.find_by(charge_id: charge_id) # fallback for legacy records
 
     unless payment
       Rails.logger.warn("[ChargeflowDispute] No payment found for charge_id=#{charge_id} — skipping")
