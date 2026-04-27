@@ -3,7 +3,7 @@ class Api::V1::PlansController < ActionController::API
   include Devise::Controllers::Helpers
 
   before_action :validate_create_params, only: [ :create ]
-  before_action :set_plan, only: [ :show, :generate_agreement, :mark_payment_success, :mark_payment_failed ]
+  before_action :set_plan, only: [ :show, :generate_agreement, :mark_payment_success, :mark_payment_failed, :cancel_payment ]
   before_action :authenticate_user!, only: [ :update_next_payment_at ]
   before_action :set_current_user_plan, only: [ :update_next_payment_at ]
 
@@ -87,6 +87,17 @@ class Api::V1::PlansController < ActionController::API
     failed_payment = @plan.payments.where(status: :failed).order(updated_at: :desc).first
     GhlInboundWebhookWorker.perform_async(failed_payment.id, GhlInboundWebhookService::PAYMENT_FAILED_EVENT) if failed_payment.present?
     render_success(data: serialized_plan(@plan), message: "Plan marked as failed", status: :ok)
+  end
+
+  def cancel_payment
+    return render_error(message: "Paid plan cannot be cancelled", status: :unprocessable_entity) if @plan.paid?
+
+    # Revert the plan back to agreement_generated so the checkout flow
+    # resumes at the Agreement step instead of the Payment step.
+    if @plan.payment_pending? || @plan.failed?
+      @plan.update!(status: :agreement_generated)
+    end
+    render_success(data: serialized_plan(@plan), message: "Payment cancelled", status: :ok)
   end
 
   def update_next_payment_at
