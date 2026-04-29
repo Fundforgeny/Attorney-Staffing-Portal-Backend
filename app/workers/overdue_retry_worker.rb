@@ -63,7 +63,8 @@ class OverdueRetryWorker
 
     # Group by user so we can try all cards per user before notifying
     by_user = overdue_payments.group_by(&:user_id)
-    succeeded_user_ids = []
+    succeeded_user_ids  = []
+    succeeded_payments  = {}  # user_id => payment that succeeded
 
     # ── Phase 1: Attempt charges for ALL users first ────────────────────────────
     by_user.each do |user_id, payments|
@@ -88,6 +89,7 @@ class OverdueRetryWorker
           if result[:success]
             Rails.logger.info("[OverdueRetryWorker] SUCCESS payment_id=#{payment.id} user=#{user.email} card=#{card.id}")
             succeeded_user_ids << user_id
+            succeeded_payments[user_id] = payment
             success = true
             break
           elsif result[:hard_decline]
@@ -103,24 +105,36 @@ class OverdueRetryWorker
     end
 
     # ── Phase 2: Fire GHL webhooks ONLY after ALL users have been processed ─────
-    # We collect all users to notify first, then fire all webhooks at the end
-    # so no webhook is sent mid-run while other cards are still being tried.
-    notify_users = by_user.keys - succeeded_user_ids.uniq
-    Rails.logger.info("[OverdueRetryWorker] All charges complete. Notifying #{notify_users.size} user(s) via GHL webhook")
+    # Success webhooks fire for clients who had a payment go through.
+    # Failure webhooks fire for clients whose cards were all exhausted.
+    # No webhook is ever sent mid-run while other cards are still being tried.
+    Rails.logger.info("[OverdueRetryWorker] All charges complete. Firing GHL webhooks...")
 
+    # Fire success webhooks for clients who paid
+    succeeded_user_ids.uniq.each do |user_id|
+      payment = succeeded_payments[user_id]
+      next unless payment
+      success_event = payment.monthly_payment? ?
+        GhlInboundWebhookService::INSTALLMENT_PAYMENT_SUCCESSFUL_EVENT :
+        GhlInboundWebhookService::PAYMENT_SUCCESSFUL_EVENT
+      Rails.logger.info("[OverdueRetryWorker] Firing success webhook for user_id=#{user_id} payment_id=#{payment.id} event=#{success_event}")
+      GhlInboundWebhookWorker.perform_async(payment.id, success_event)
+    end
+
+    # Fire failure webhooks for clients whose cards were all exhausted
+    notify_users = by_user.keys - succeeded_user_ids.uniq
     notify_users.each do |user_id|
       payments = by_user[user_id]
-      # Pick the highest-value payment to represent this user in the webhook
       representative_payment = payments.max_by { |p| p.payment_amount.to_d }
       next unless representative_payment
-
+      Rails.logger.info("[OverdueRetryWorker] Firing failure webhook for user_id=#{user_id} payment_id=#{representative_payment.id}")
       GhlInboundWebhookWorker.perform_async(
         representative_payment.id,
         GhlInboundWebhookService::PAYMENT_FAILED_EVENT
       )
     end
 
-    Rails.logger.info("[OverdueRetryWorker] Done — succeeded=#{succeeded_user_ids.uniq.size} notified=#{notify_users.size}")
+    Rails.logger.info("[OverdueRetryWorker] Done — succeeded=#{succeeded_user_ids.uniq.size} failed_notified=#{notify_users.size}")
   end
 
   private
