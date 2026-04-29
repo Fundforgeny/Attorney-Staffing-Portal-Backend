@@ -9,7 +9,8 @@
 #   2:00 AM EST  = 07:00 UTC
 #
 # Job overview:
-#   scheduled_payment       — daily 6 AM EST: charge all due/retry installments
+#   scheduled_payment       — daily 6:00 AM EST: charge all due/retry installments
+#   overdue_retry           — daily 6:01 AM EST: retry ALL overdue/failed payments across all vaulted cards
 #   ghl_7_day_reminder      — daily 2 PM EST: GHL alert for payments due in 7 days
 #   ghl_24_hour_reminder    — daily 2 PM EST: GHL alert for payments due tomorrow
 #   ghl_30_days_late        — daily 2 PM EST: GHL alert for payments 30+ days overdue
@@ -44,6 +45,18 @@ Sidekiq.configure_server do |config|
         "args"        => ["30_days_late"],
         "cron"        => "10 19 * * *",  # Daily at 2:10 PM EST (19:10 UTC)
         "description" => "Fire GHL 30-days-late notification for overdue plans"
+      },
+
+      # ── Overdue payment retry (6:01 AM EST = 11:01 UTC) ────────────────────────
+      # Runs 1 minute after ScheduledPaymentWorker. Finds ALL overdue/failed payments
+      # with any active vault token (regardless of plan status), tries every card per
+      # client before giving up, then fires GHL "payment failed" + "overdue" webhook
+      # ONLY after the FULL run across ALL users is complete — never mid-retry.
+      "overdue_retry" => {
+        "class"       => "OverdueRetryWorker",
+        "args"        => [],
+        "cron"        => "1 11 * * *",   # Daily at 6:01 AM EST (11:01 UTC)
+        "description" => "Retry all overdue/failed payments across all vaulted cards; fire GHL webhook after full run"
       },
 
       # NOTE: Spreedly Account Updater is event-driven via inbound webhook callback.
