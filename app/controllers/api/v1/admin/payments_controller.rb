@@ -4,7 +4,7 @@
 #
 class Api::V1::Admin::PaymentsController < Api::V1::Admin::BaseController
 
-  before_action :set_payment, only: [:show, :charge_now]
+  before_action :set_payment, only: [:show, :charge_now, :refund]
 
   # GET /api/v1/admin/payments
   def index
@@ -15,6 +15,7 @@ class Api::V1::Admin::PaymentsController < Api::V1::Admin::BaseController
     scope = scope.where(needs_new_card: true)                       if params[:needs_card] == "true"
     scope = scope.where("retry_count > 0")                         if params[:has_retries] == "true"
     scope = scope.where("next_retry_at <= ?", Date.today)           if params[:retry_due] == "true"
+    scope = scope.refunded                                          if params[:refunded] == "true"
     scope = scope.where("scheduled_at >= ?", params[:from].to_date) if params[:from].present?
     scope = scope.where("scheduled_at <= ?", params[:to].to_date)   if params[:to].present?
 
@@ -43,6 +44,26 @@ class Api::V1::Admin::PaymentsController < Api::V1::Admin::BaseController
     render_success(message: "Payment ##{@payment.id} queued for immediate charge.")
   end
 
+  # POST /api/v1/admin/payments/:id/refund
+  def refund
+    return render_error(message: "You do not have permission to issue refunds.", status: :forbidden) unless current_admin.can_refund_payments?
+
+    Admin::PaymentRefundService.new(
+      payment: @payment,
+      admin_user: current_admin,
+      amount: params[:amount],
+      reason: params[:reason]
+    ).call
+
+    @payment.reload
+    render_success(
+      message: "Refund submitted successfully.",
+      data: payment_full(@payment)
+    )
+  rescue ArgumentError, StandardError => e
+    render_error(message: "Refund failed: #{e.message}", status: :unprocessable_entity)
+  end
+
   private
 
   def set_payment
@@ -53,23 +74,29 @@ class Api::V1::Admin::PaymentsController < Api::V1::Admin::BaseController
 
   def payment_row(p)
     {
-      id:              p.id,
-      plan_id:         p.plan_id,
-      plan_name:       p.plan&.name,
-      client_name:     p.plan&.user&.full_name,
-      client_email:    p.plan&.user&.email,
-      amount:          p.payment_amount.to_f,
-      status:          p.status,
-      payment_type:    p.payment_type,
-      scheduled_at:    p.scheduled_at,
-      paid_at:         p.paid_at,
-      retry_count:     p.retry_count || 0,
-      next_retry_at:   p.next_retry_at,
-      decline_reason:  p.decline_reason,
-      needs_new_card:  p.needs_new_card?,
-      card_brand:      p.payment_method&.card_brand,
-      card_last4:      p.payment_method&.last4,
-      created_at:      p.created_at
+      id:                  p.id,
+      plan_id:             p.plan_id,
+      plan_name:           p.plan&.name,
+      client_name:         p.plan&.user&.full_name,
+      client_email:        p.plan&.user&.email,
+      amount:              p.payment_amount.to_f,
+      total_amount:        p.total_payment_including_fee.to_f,
+      refundable_amount:   p.refundable_amount.to_f,
+      refunded_amount:     p.refunded_amount.to_f,
+      refund_transaction_id: p.refund_transaction_id,
+      refunded_at:         p.refunded_at,
+      last_refund_reason:  p.last_refund_reason,
+      status:              p.status,
+      payment_type:        p.payment_type,
+      scheduled_at:        p.scheduled_at,
+      paid_at:             p.paid_at,
+      retry_count:         p.retry_count || 0,
+      next_retry_at:       p.next_retry_at,
+      decline_reason:      p.decline_reason,
+      needs_new_card:      p.needs_new_card?,
+      card_brand:          p.payment_method&.card_brand,
+      card_last4:          p.payment_method&.last4,
+      created_at:          p.created_at
     }
   end
 
