@@ -1,7 +1,7 @@
 # README
 
-This README would normally document whatever steps are necessary to get the
-application up and running.
+This Rails app is the Fund Forge backend for payments, customer portal APIs,
+and admin APIs.
 
 Things you may want to cover:
 
@@ -10,6 +10,9 @@ Things you may want to cover:
 * System dependencies
 
 * Configuration
+
+See `docs/admin_auth.md` for the current passwordless admin login flow and
+the environment settings required for admin magic links.
 
 * Database creation
 

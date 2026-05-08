@@ -2,7 +2,7 @@ namespace :admin do
   desc "Create or reset the Fund Forge admin user"
   task create: :environment do
     email    = ENV.fetch("ADMIN_EMAIL", "admin@fundforge.net")
-    password = ENV.fetch("ADMIN_PASSWORD", "FundForge2024!")
+    password = ENV.fetch("ADMIN_PASSWORD")
 
     admin = AdminUser.find_or_initialize_by(email: email)
     admin.password              = password

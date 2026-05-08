@@ -6,6 +6,10 @@ class AdminUser < ApplicationRecord
   devise :database_authenticatable,
          :recoverable, :rememberable, :validatable
 
+  has_many :admin_login_link_tokens, dependent: :destroy
+
+  before_validation :normalize_email
+
   # Validations
 
   validates :first_name, presence: true
@@ -41,5 +45,11 @@ class AdminUser < ApplicationRecord
     formatted.gsub!(";", " x") # (415) 555-2671 x123
 
     formatted
+  end
+
+  private
+
+  def normalize_email
+    self.email = email&.downcase&.strip if email_changed?
   end
 end

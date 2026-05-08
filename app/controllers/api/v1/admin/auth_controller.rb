@@ -14,7 +14,7 @@ class Api::V1::Admin::AuthController < ActionController::API
       return render_error(message: "Invalid email or password", status: :unauthorized)
     end
 
-    token = generate_admin_token(admin)
+    token = AdminAuthTokenService.generate(admin)
 
     render_success(data: {
       token:      token,
@@ -25,21 +25,4 @@ class Api::V1::Admin::AuthController < ActionController::API
     })
   end
 
-  private
-
-  def generate_admin_token(admin)
-    # Build a JWT with sub = "admin:<id>" so BaseController can distinguish admin tokens
-    secret = ENV["DEVISE_JWT_SECRET_KEY"].presence ||
-             Rails.application.credentials.devise_jwt_secret_key.presence ||
-             Rails.application.secret_key_base
-
-    payload = {
-      sub: "admin:#{admin.id}",
-      iat: Time.current.to_i,
-      exp: 8.hours.from_now.to_i,
-      jti: SecureRandom.uuid
-    }
-
-    JWT.encode(payload, secret, "HS256")
-  end
 end

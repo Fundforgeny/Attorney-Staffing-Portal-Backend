@@ -66,6 +66,7 @@ Rails.application.routes.draw do
       namespace :admin do
         # Auth
         post "auth/sign_in", to: "auth#sign_in"
+        resource :login_link, only: [ :create, :show ], controller: "login_links"
 
         # Dashboard
         get "dashboard", to: "dashboard#index"
