@@ -38,7 +38,7 @@ class Api::V1::Admin::PlansController < Api::V1::Admin::BaseController
       payments:        payments.map { |p| payment_detail(p) },
       cards:           cards.map { |c| card_detail(c) },
       grace_requests:  graces.map { |g| grace_detail(g) },
-      agreement:       agreement ? { id: agreement.id, signed_at: agreement.created_at, pdf_url: agreement.pdf_url } : nil
+      agreement:       agreement_detail(agreement)
     })
   end
 
@@ -216,5 +216,27 @@ class Api::V1::Admin::PlansController < Api::V1::Admin::BaseController
       halves_paid: g.halves_paid,
       created_at:  g.created_at
     }
+  end
+
+  def agreement_detail(agreement)
+    return nil unless agreement
+
+    {
+      id: agreement.id,
+      signed_at: agreement.signed_at || agreement.created_at,
+      created_at: agreement.created_at,
+      pdf_url: active_storage_url_for(agreement.pdf),
+      financing_pdf_url: active_storage_url_for(agreement.pdf),
+      engagement_pdf_url: active_storage_url_for(agreement.engagement_pdf)
+    }.compact
+  end
+
+  def active_storage_url_for(attachment)
+    return nil unless attachment&.attached?
+
+    url_for(attachment)
+  rescue StandardError => e
+    Rails.logger.warn("[Admin::PlansController] Failed generating attachment URL: #{e.class}: #{e.message}")
+    nil
   end
 end
