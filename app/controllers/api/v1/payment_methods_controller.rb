@@ -26,14 +26,9 @@ class Api::V1::PaymentMethodsController < ActionController::API
 
     sync_attrs = spreedly_payment_method_attributes(create_params)
     spreedly_service = Spreedly::PaymentMethodsService.new
-    # Retain the token first so it persists in the vault before we attempt any update.
-    # Spreedly iframe tokens are single-use and expire quickly — retaining ensures the
-    # token survives the round-trip to our backend even under slow network conditions.
     spreedly_service.retain_payment_method(token: create_params[:vault_token])
     spreedly_payment_method = spreedly_service.update_payment_method(token: create_params[:vault_token], **sync_attrs)
 
-    # Use Spreedly response as authoritative fallback for card metadata
-    # (covers cases where the frontend's paymentMethod callback returns nil for last_four_digits)
     spreedly_last4       = spreedly_payment_method["last_four_digits"].presence
     spreedly_card_brand  = spreedly_payment_method["card_type"].presence
     spreedly_exp_month   = spreedly_payment_method["month"].presence
@@ -47,25 +42,21 @@ class Api::V1::PaymentMethodsController < ActionController::API
       exp_month: create_params[:exp_month].presence || spreedly_exp_month || payment_method.exp_month,
       exp_year: create_params[:exp_year].presence || spreedly_exp_year || payment_method.exp_year,
       cardholder_name: create_params[:cardholder_name].presence || payment_method.cardholder_name,
+      archived_at: nil,
       last_updated_via_spreedly_at: Time.current
     )
 
     created = payment_method.new_record?
-    is_default = ActiveModel::Type::Boolean.new.cast(create_params[:is_default]) || current_user.payment_methods.blank?
+    is_default = ActiveModel::Type::Boolean.new.cast(create_params[:is_default]) || current_user.payment_methods.active.blank?
 
     ActiveRecord::Base.transaction do
       if is_default
-        current_user.payment_methods.update_all(is_default: false)
+        current_user.payment_methods.active.update_all(is_default: false)
         payment_method.is_default = true
       end
       payment_method.save!
     end
 
-    # When a new card is added (or set as default), immediately retry any payments
-    # that were blocked because the customer needed a new card. This covers the case
-    # where a recurring charge exhausted retries and set needs_new_card=true — the
-    # customer adds a new card and we charge right away instead of waiting for the
-    # next scheduled sweep.
     retry_blocked_payments!(payment_method) if created || is_default
 
     render_success(
@@ -88,7 +79,7 @@ class Api::V1::PaymentMethodsController < ActionController::API
 
     ActiveRecord::Base.transaction do
       if update_params.key?(:is_default) && ActiveModel::Type::Boolean.new.cast(update_params[:is_default])
-        current_user.payment_methods.update_all(is_default: false)
+        current_user.payment_methods.active.update_all(is_default: false)
       end
 
       @payment_method.update!(
@@ -96,11 +87,11 @@ class Api::V1::PaymentMethodsController < ActionController::API
         exp_month: spreadly_updated["month"] || @payment_method.exp_month,
         exp_year: spreadly_updated["year"] || @payment_method.exp_year,
         last_updated_via_spreedly_at: Time.current,
+        archived_at: nil,
         is_default: update_params[:is_default].nil? ? @payment_method.is_default : ActiveModel::Type::Boolean.new.cast(update_params[:is_default])
       )
     end
 
-    # If this card is now the default, retry any blocked payments.
     retry_blocked_payments!(@payment_method) if @payment_method.is_default?
 
     render_success(data: serialize_payment_method(@payment_method, spreedly_payment_method: spreadly_updated), message: "Payment method updated successfully", status: :ok)
@@ -112,48 +103,34 @@ class Api::V1::PaymentMethodsController < ActionController::API
 
   def set_default
     ActiveRecord::Base.transaction do
-      current_user.payment_methods.update_all(is_default: false)
-      @payment_method.update!(is_default: true)
+      current_user.payment_methods.active.update_all(is_default: false)
+      @payment_method.update!(is_default: true, archived_at: nil)
     end
 
-    # Retry blocked payments now that a new default card is set.
     retry_blocked_payments!(@payment_method)
 
     render_success(data: serialize_payment_method(@payment_method, spreedly_payment_method: spreedly_payment_method_snapshot(@payment_method)), message: "Default payment method updated", status: :ok)
   end
 
   def destroy
+    # Absolute vault policy: never call Spreedly redaction from user/admin removal.
+    # Removal only archives the local card so it is hidden from normal selection.
+    # Spreedly redaction is allowed only through StaleVaultCleanupWorker after the
+    # 12-month no-successful-charge/no-account-updater-activity rule is satisfied.
     deleted_default = @payment_method.is_default?
-    begin
-      if @payment_method.vault_token.present?
-        Spreedly::PaymentMethodsService.new.redact_payment_method(token: @payment_method.vault_token)
-      end
-    rescue Spreedly::Error => e
-      # If card is already absent in Spreedly, delete local record anyway.
-      raise e unless spreedly_payment_method_missing?(e)
-    end
-
-    @payment_method.update!(spreedly_redacted_at: Time.current, vault_token: nil)
-    @payment_method.destroy!
+    @payment_method.archive!
 
     if deleted_default
-      next_payment_method = current_user.payment_methods.order(created_at: :desc).first
+      next_payment_method = current_user.payment_methods.active.order(created_at: :desc).first
       next_payment_method&.update!(is_default: true)
     end
 
-    render_success(message: "Payment method deleted successfully", status: :ok)
+    render_success(message: "Payment method removed from active use. Vault token preserved for 12-month cleanup policy.", status: :ok)
   end
 
   private
 
-  # ── Authentication ────────────────────────────────────────────────────────────
-  #
-  # Accepts both:
-  #   1. JWT Bearer token (customer portal magic-link sessions)
-  #   2. Devise session / token (admin portal, existing integrations)
-  #
   def authenticate_any!
-    # Try JWT first — present when the customer portal sends Authorization: Bearer <jwt>
     auth_header = request.headers["Authorization"].to_s
     if auth_header.start_with?("Bearer ")
       token = auth_header.split(" ").last
@@ -162,28 +139,17 @@ class Api::V1::PaymentMethodsController < ActionController::API
         @jwt_user = User.find_by(id: payload["sub"])
         return if @jwt_user.present?
       rescue JWT::DecodeError, Warden::JWTAuth::Errors::RevokedToken
-        # Fall through to Devise auth below
       end
     end
 
-    # Fall back to Devise session auth (admin portal / standard sessions)
     authenticate_user!
   end
 
-  # Override current_user so all actions work regardless of auth method.
   def current_user
     @jwt_user || super
   end
 
-  # ── Charge retry on card add / set-default ────────────────────────────────────
-  #
-  # When a customer adds a new card or sets a card as default, immediately retry
-  # any payments that were blocked because the previous card failed and
-  # needs_new_card was set to true. This mirrors the Account Updater retry logic
-  # in SpreedlyAccountUpdaterWorker#requeue_blocked_payments!
-  #
   def retry_blocked_payments!(payment_method)
-    # Find all failed payments across the user's active plans that need a new card.
     blocked = Payment
       .joins(:plan)
       .where(plans: { user_id: current_user.id, status: [ Plan.statuses[:draft], Plan.statuses[:payment_pending] ] })
@@ -209,15 +175,8 @@ class Api::V1::PaymentMethodsController < ActionController::API
     Rails.logger.info("[PaymentMethodsController] Retried #{blocked.size} blocked payment(s) for user_id=#{current_user.id} after card add")
   end
 
-  # ── Stale card auto-cleanup ───────────────────────────────────────────────────
-  #
-  # Deprecated: kept only as a reference for a future explicit age-based cleanup job.
-  # Do not call this from normal portal reads. Listing cards must never redact vault
-  # tokens because metadata can be missing from frontend timing issues or temporary
-  # Spreedly/API errors.
-  #
   def auto_cleanup_stale_payment_methods!
-    Rails.logger.warn("[AutoCleanup] Disabled. Stale vault cleanup must run through an explicit age-based maintenance job.")
+    Rails.logger.warn("[AutoCleanup] Disabled. Stale vault cleanup must run only through StaleVaultCleanupWorker.")
   end
 
   def set_payment_method
@@ -338,6 +297,7 @@ class Api::V1::PaymentMethodsController < ActionController::API
       exp_year: payment_method.exp_year,
       cardholder_name: payment_method.cardholder_name,
       is_default: payment_method.is_default,
+      archived_at: payment_method.archived_at,
       created_at: payment_method.created_at,
       updated_at: payment_method.updated_at,
       vault_token: payment_method.vault_token,
@@ -371,13 +331,5 @@ class Api::V1::PaymentMethodsController < ActionController::API
   rescue Spreedly::Error => e
     Rails.logger.warn("Failed to fetch Spreedly payment method #{payment_method.vault_token}: #{e.message}")
     {}
-  end
-
-  def spreedly_payment_method_missing?(error)
-    message = error.message.to_s.downcase
-    return true if message.include?("unable to find the specified payment method")
-    return true if message.include?("payment method not found")
-
-    error.status.to_i == 404
   end
 end
