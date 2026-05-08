@@ -3,7 +3,8 @@
 # Read-only reporter for understanding which saved cards may be recoverable.
 #
 # This service intentionally does not modify any records and does not print full
-# vault tokens. It is safe to run from Render logs or manually via rake task.
+# vault tokens or raw Spreedly transaction payloads. It is safe to run from Render
+# logs or manually via rake task.
 #
 class VaultRecoveryReporter
   MAX_REVIEW_ROWS = 100
@@ -80,15 +81,15 @@ class VaultRecoveryReporter
         "user_id=#{row['user_id']}",
         "client=#{row['client_name']}",
         "email=#{row['email']}",
-        "payment_status=#{row['payment_status']}",
-        "plan_status=#{row['plan_status']}",
+        "payment_status=#{payment_status_name(row['payment_status'])}",
+        "plan_status=#{plan_status_name(row['plan_status'])}",
         "amount=#{row['amount']}",
         "pm_id=#{row['payment_method_id'] || 'none'}",
         "card=#{row['card_brand']} ****#{row['last4']}",
         "token_present=#{row['token_present']}",
         "archived=#{row['archived']}",
         "redacted=#{row['redacted']}",
-        "decline=#{row['decline_reason']}"
+        "decline=#{sanitize_decline_reason(row['decline_reason'])}"
       ].join(" | ")
     end
     puts ""
@@ -105,6 +106,25 @@ class VaultRecoveryReporter
 
   def monthly_payment_scope
     Payment.respond_to?(:monthly_payment) ? Payment.monthly_payment : Payment.where(payment_type: Payment.payment_types[:monthly_payment])
+  end
+
+  def payment_status_name(value)
+    Payment.statuses.invert[value.to_i] || value
+  end
+
+  def plan_status_name(value)
+    Plan.statuses.invert[value.to_i] || value
+  end
+
+  def sanitize_decline_reason(reason)
+    return "" if reason.blank?
+
+    text = reason.to_s
+    return "no_vault_token" if text == "no_vault_token"
+    return "payment method redacted" if text.downcase.include?("payment method has been redacted")
+    return "gateway_processing_failed" if text.downcase.include?("gateway_processing_failed")
+
+    text.gsub(/01[A-Z0-9]{20,}/, "[token-redacted]").truncate(120)
   end
 
   def bucket_count(sql)
