@@ -1,44 +1,21 @@
 # OverdueRetryWorker
 #
-# Daily cron job (runs at 6:00 AM EST alongside ScheduledPaymentWorker).
+# Safety-first overdue retry job.
 #
-# Handles ALL overdue/failed payments that have at least one active vault token —
-# regardless of plan status (failed, expired, payment_pending, etc.).
+# This worker only retries payments that are already overdue and explicitly due
+# for retry today. It does not touch upcoming scheduled payments, and it does not
+# sweep every failed payment daily or cycle through every vaulted card.
 #
-# KEY DIFFERENCE from ScheduledPaymentWorker:
-#   - ScheduledPaymentWorker handles fresh/scheduled payments on active plans
-#   - OverdueRetryWorker handles backlogged failed payments on any plan status,
-#     cycling through ALL of a user's vaulted cards before giving up
-#
-# MULTI-CARD RETRY LOGIC:
-#   For each overdue payment, try every non-redacted vault token on the user's
-#   account in order (most recent first). Stop as soon as one succeeds or a
-#   hard decline is received. Only fire the GHL "payment failed" + "overdue"
-#   webhook AFTER all cards have been exhausted — never mid-retry.
-#
-# CANCELLED PLAN EXCLUSION:
-#   Plans in CANCELLED_PLAN_IDS are never retried or notified.
-#
-# WEBHOOK:
-#   Fires GhlInboundWebhookWorker with "payment failed" event for each client
-#   whose cards were all exhausted this run, with overdue=true.
+# RecurringChargeService owns the actual retry policy:
+#   - hard-decline stop rules
+#   - soft-decline payday spacing
+#   - max attempts
+#   - needs_new_card pause state
 #
 class OverdueRetryWorker
   include Sidekiq::Worker
   sidekiq_options queue: :payments, retry: 1
 
-  # Hard decline patterns — stop retrying immediately on these
-  HARD_DECLINE_PATTERNS = [
-    "pick up card", "pickup card", "stolen", "lost card",
-    "invalid account", "account closed", "do not honor",
-    "card reported", "fraudulent", "security violation",
-    "card not permitted", "transaction not permitted",
-    "restricted card", "revocation", "card member cancelled",
-    "invalid card number", "no card record", "no such account",
-    "redacted"
-  ].freeze
-
-  # Plans that have been manually cancelled — never retry or notify these
   CANCELLED_PLAN_IDS = [
     1202,  # Joseph Stidem - 3 Months Plan
     1218,  # Lizarelis Kelley - Full Payment Plan
@@ -54,131 +31,49 @@ class OverdueRetryWorker
   ].freeze
 
   def perform
-    Rails.logger.info("[OverdueRetryWorker] Starting overdue retry run — #{Date.current}")
+    Rails.logger.info("[OverdueRetryWorker] Starting overdue-only retry run — #{Date.current}")
 
-    # Find all overdue payments: failed status OR pending on a failed/expired plan
-    # that have at least one active vault token, excluding cancelled plans
-    overdue_payments = find_overdue_payments
-    Rails.logger.info("[OverdueRetryWorker] Found #{overdue_payments.size} overdue payment(s)")
+    overdue_retryable_payments = find_overdue_retryable_payments
+    Rails.logger.info("[OverdueRetryWorker] Found #{overdue_retryable_payments.size} overdue retryable payment(s)")
 
-    # Group by user so we can try all cards per user before notifying
-    by_user = overdue_payments.group_by(&:user_id)
-    succeeded_user_ids  = []
-    succeeded_payments  = {}  # user_id => payment that succeeded
+    overdue_retryable_payments.each do |payment|
+      result = RecurringChargeService.new(payment: payment).call
 
-    # ── Phase 1: Attempt charges for ALL users first ────────────────────────────
-    by_user.each do |user_id, payments|
-      user = payments.first.user
-      # Get all active (non-redacted) vault tokens for this user, most recent first
-      active_cards = user.payment_methods
-                         .where.not(vault_token: nil)
-                         .where(spreedly_redacted_at: nil)
-                         .order(created_at: :desc)
-
-      next if active_cards.empty?
-
-      # Try each payment with each card until a success or hard decline
-      payments.each do |payment|
-        next if payment.status == "succeeded"
-
-        success = false
-
-        active_cards.each do |card|
-          result = attempt_charge(payment, card)
-
-          if result[:success]
-            Rails.logger.info("[OverdueRetryWorker] SUCCESS payment_id=#{payment.id} user=#{user.email} card=#{card.id}")
-            succeeded_user_ids << user_id
-            succeeded_payments[user_id] = payment
-            success = true
-            break
-          elsif result[:hard_decline]
-            Rails.logger.info("[OverdueRetryWorker] HARD DECLINE payment_id=#{payment.id} user=#{user.email} reason=#{result[:reason]}")
-            break
-          else
-            Rails.logger.info("[OverdueRetryWorker] Soft decline payment_id=#{payment.id} card=#{card.id} reason=#{result[:reason]} — trying next card")
-          end
-        end
-
-        break if success # Payment succeeded, move to next payment for this user
+      if result[:success]
+        Rails.logger.info("[OverdueRetryWorker] SUCCESS payment_id=#{payment.id} user_id=#{payment.user_id}")
+      elsif result[:exhausted]
+        Rails.logger.warn("[OverdueRetryWorker] EXHAUSTED payment_id=#{payment.id} user_id=#{payment.user_id} reason=#{result[:reason]}")
+      elsif result[:rescheduled]
+        Rails.logger.info("[OverdueRetryWorker] RESCHEDULED payment_id=#{payment.id} user_id=#{payment.user_id} next_retry=#{result[:next_retry]}")
+      else
+        Rails.logger.warn("[OverdueRetryWorker] NO CHANGE payment_id=#{payment.id} user_id=#{payment.user_id} reason=#{result[:reason]}")
       end
     end
 
-    # ── Phase 2: Fire GHL webhooks ONLY after ALL users have been processed ─────
-    # Success webhooks fire for clients who had a payment go through.
-    # Failure webhooks fire for clients whose cards were all exhausted.
-    # No webhook is ever sent mid-run while other cards are still being tried.
-    Rails.logger.info("[OverdueRetryWorker] All charges complete. Firing GHL webhooks...")
-
-    # Fire success webhooks for clients who paid
-    succeeded_user_ids.uniq.each do |user_id|
-      payment = succeeded_payments[user_id]
-      next unless payment
-      success_event = payment.monthly_payment? ?
-        GhlInboundWebhookService::INSTALLMENT_PAYMENT_SUCCESSFUL_EVENT :
-        GhlInboundWebhookService::PAYMENT_SUCCESSFUL_EVENT
-      Rails.logger.info("[OverdueRetryWorker] Firing success webhook for user_id=#{user_id} payment_id=#{payment.id} event=#{success_event}")
-      GhlInboundWebhookWorker.perform_async(payment.id, success_event)
-    end
-
-    # Fire failure webhooks for clients whose cards were all exhausted
-    notify_users = by_user.keys - succeeded_user_ids.uniq
-    notify_users.each do |user_id|
-      payments = by_user[user_id]
-      representative_payment = payments.max_by { |p| p.payment_amount.to_d }
-      next unless representative_payment
-      Rails.logger.info("[OverdueRetryWorker] Firing failure webhook for user_id=#{user_id} payment_id=#{representative_payment.id}")
-      GhlInboundWebhookWorker.perform_async(
-        representative_payment.id,
-        GhlInboundWebhookService::PAYMENT_FAILED_EVENT
-      )
-    end
-
-    Rails.logger.info("[OverdueRetryWorker] Done — succeeded=#{succeeded_user_ids.uniq.size} failed_notified=#{notify_users.size}")
+    Rails.logger.info("[OverdueRetryWorker] Done — processed=#{overdue_retryable_payments.size}")
   end
 
   private
 
-  def find_overdue_payments
+  def find_overdue_retryable_payments
     Payment
+      .monthly_payment
       .joins(:plan, :user)
-      .where(
-        "(payments.status = ? OR (payments.status = ? AND plans.status IN (?)))",
-        Payment.statuses[:failed],
-        Payment.statuses[:pending],
-        [Plan.statuses[:failed], Plan.statuses[:expired], Plan.statuses[:payment_pending]]
-      )
+      .where(status: Payment.statuses[:pending])
+      .where(needs_new_card: false)
+      .where("retry_count > 0")
+      .where("scheduled_at < ?", Time.current.beginning_of_day)
+      .where("next_retry_at <= ?", Time.current.end_of_day)
       .where.not(plans: { id: CANCELLED_PLAN_IDS })
+      .where.not(plans: { status: inactive_plan_statuses })
       .where(
         "EXISTS (SELECT 1 FROM payment_methods pm WHERE pm.user_id = payments.user_id AND pm.vault_token IS NOT NULL AND pm.spreedly_redacted_at IS NULL)"
       )
       .includes(:user, :payment_method, :plan)
-      .order(:user_id, payment_amount: :desc)
+      .order(:next_retry_at, :user_id)
   end
 
-  def attempt_charge(payment, card)
-    # Use RecurringChargeService but override the payment method to the specified card
-    # We temporarily assign the card to the payment for the charge attempt
-    original_pm_id = payment.payment_method_id
-    payment.update_columns(payment_method_id: card.id) if payment.payment_method_id != card.id
-
-    result = RecurringChargeService.new(payment).call
-
-    # Restore original payment method if we changed it and it failed
-    if !result[:success] && payment.payment_method_id != original_pm_id
-      payment.update_columns(payment_method_id: original_pm_id)
-    end
-
-    decline_reason = result[:reason].to_s.downcase
-    hard = HARD_DECLINE_PATTERNS.any? { |p| decline_reason.include?(p) }
-
-    {
-      success: result[:success],
-      hard_decline: hard,
-      reason: result[:reason]
-    }
-  rescue StandardError => e
-    Rails.logger.error("[OverdueRetryWorker] Error charging payment_id=#{payment.id} card=#{card.id}: #{e.message}")
-    { success: false, hard_decline: false, reason: e.message }
+  def inactive_plan_statuses
+    [Plan.statuses[:paid], Plan.statuses[:failed], Plan.statuses[:expired]]
   end
 end
