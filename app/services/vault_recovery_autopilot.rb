@@ -77,13 +77,16 @@ class VaultRecoveryAutopilot
   end
 
   def target_payment_methods
+    # Do not rely on User has_many :payments; that association is not currently
+    # defined. Join explicitly from payment_methods.user_id to payments.user_id.
     PaymentMethod
       .where.not(vault_token: [nil, ""])
-      .joins(user: { payments: :plan })
+      .joins("INNER JOIN payments ON payments.user_id = payment_methods.user_id")
+      .joins("INNER JOIN plans ON plans.id = payments.plan_id")
       .where(payments: { needs_new_card: true, payment_type: Payment.payment_types[:monthly_payment] })
       .where(plans: { status: ACTIVE_PLAN_STATUSES })
       .distinct
-      .order(:id)
+      .order("payment_methods.id ASC")
       .limit(MAX_FIX_ROWS)
   end
 
