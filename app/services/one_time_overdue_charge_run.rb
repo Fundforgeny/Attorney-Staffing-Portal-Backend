@@ -14,7 +14,8 @@
 #   - skips missing vault tokens
 #   - skips locally redacted cards
 #   - skips archived cards
-#   - skips payments already marked by this one-time run
+#   - respects next_retry_at when present
+#   - skips payments already queued by this one-time run
 #   - uses ChargePaymentWorker/RecurringChargeService so hard-decline and retry
 #     rules remain enforced
 #
@@ -94,6 +95,7 @@ class OneTimeOverdueChargeRun
           payments.payment_amount,
           payments.total_payment_including_fee,
           payments.scheduled_at,
+          payments.next_retry_at,
           payments.retry_count,
           ROW_NUMBER() OVER (PARTITION BY payments.plan_id ORDER BY payments.scheduled_at ASC, payments.id ASC) AS row_number
         FROM payments
@@ -104,6 +106,7 @@ class OneTimeOverdueChargeRun
           AND payments.status = #{Payment.statuses[:pending]}
           AND payments.needs_new_card = FALSE
           AND payments.scheduled_at < NOW()
+          AND (payments.next_retry_at IS NULL OR payments.next_retry_at <= NOW())
           AND (payments.decline_reason IS NULL OR payments.decline_reason <> '#{RUN_MARKER}')
           AND payment_methods.archived_at IS NULL
           AND payment_methods.spreedly_redacted_at IS NULL
@@ -124,6 +127,7 @@ class OneTimeOverdueChargeRun
         overdue_candidates.payment_amount,
         overdue_candidates.total_payment_including_fee,
         overdue_candidates.scheduled_at,
+        overdue_candidates.next_retry_at,
         overdue_candidates.retry_count
       FROM overdue_candidates
       INNER JOIN plans ON plans.id = overdue_candidates.plan_id
@@ -147,6 +151,7 @@ class OneTimeOverdueChargeRun
       "card=#{row['card_brand']} ****#{row['last4']}",
       "amount=#{row['total_payment_including_fee'] || row['payment_amount']}",
       "scheduled_at=#{row['scheduled_at']}",
+      "next_retry_at=#{row['next_retry_at']}",
       "retry_count=#{row['retry_count']}"
     ].join(" | ")
   end
