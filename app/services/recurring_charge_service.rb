@@ -22,10 +22,18 @@
 #   - After the limit/window is reached, stop charging and wait for Account Updater
 #     or the client to provide a new card.
 #
+# VAULT TOKEN HANDLING
+# --------------------
+# Do not clear or redact vault tokens simply because a charge failed or Spreedly
+# had an API/lookup error. A vault token should stay stored for Account Updater,
+# auditability, and future recovery unless Spreedly confirms the token itself is
+# redacted/missing or the user/admin explicitly removes the card.
+#
 # HARD DECLINE HANDLING
 # ---------------------
 # Certain decline reasons indicate the card should not be retried and a new card
 # is required immediately. These bypass the retry window and trigger needs_new_card.
+# They do not delete/redact the saved vault token.
 #
 # ACCOUNT UPDATER
 # ---------------
@@ -38,11 +46,8 @@ class RecurringChargeService
   MIN_GAP_DAYS         = 5
   MAX_FAILURE_ATTEMPTS = 4
 
-  # Biweekly payday anchor — any known Friday that is a payday.
-  # Adjust this date to match the most common biweekly pay cycle in your client base.
   BIWEEKLY_ANCHOR = Date.new(2024, 1, 5)  # Friday, Jan 5 2024
 
-  # 3DS / SCA patterns — these are NOT hard declines on recurring charges.
   THREE_DS_PATTERNS = [
     "3ds",
     "3d secure",
@@ -56,9 +61,6 @@ class RecurringChargeService
     "requires action",
   ].freeze
 
-  # Hard decline patterns — any decline reason matching one of these strings
-  # means the card cannot be retried and needs_new_card must be set immediately.
-  # Matching is case-insensitive substring search.
   HARD_DECLINE_PATTERNS = [
     "account closed",
     "closed account",
@@ -79,7 +81,7 @@ class RecurringChargeService
     "invalid card number",
     "no card record",
     "card member cancelled",
-    "has been redacted",       # Spreedly: "payment method has been redacted"
+    "has been redacted",
     "payment method redacted",
     "redacted",
   ].freeze
@@ -91,20 +93,17 @@ class RecurringChargeService
     @client  = Spreedly::Client.new
   end
 
-  # Entry point — attempt to charge the card.
-  # Returns a result hash: { success:, rescheduled:, exhausted:, reason: }
   def call
     payment_method = resolve_payment_method
     unless payment_method&.vault_token.present?
-      handle_no_card!
+      handle_no_card!("no_vault_token")
       return { success: false, rescheduled: false, exhausted: true, reason: "no_vault_token" }
     end
 
-    if vault_token_expired?(payment_method.vault_token)
-      Rails.logger.warn("[RecurringCharge] Vault token expired/redacted for payment_id=#{payment.id} user=#{user.email} — clearing token and notifying")
-      payment_method.update_columns(vault_token: nil, updated_at: Time.current)
-      handle_no_card!
-      return { success: false, rescheduled: false, exhausted: true, reason: "vault_token_expired" }
+    if vault_token_confirmed_redacted_or_missing?(payment_method)
+      Rails.logger.warn("[RecurringCharge] Vault token confirmed redacted/missing for payment_id=#{payment.id} user=#{user.email} — pausing retries without clearing token")
+      handle_no_card!("vault_token_redacted_or_missing")
+      return { success: false, rescheduled: false, exhausted: true, reason: "vault_token_redacted_or_missing" }
     end
 
     transaction = attempt_purchase!(payment_method)
@@ -224,13 +223,13 @@ class RecurringChargeService
     Rails.logger.warn("[RecurringCharge] FAILED payment_id=#{payment.id} attempt=#{new_retry_count} reason=#{decline_reason}")
 
     if hard_decline?(decline_reason)
-      Rails.logger.warn("[RecurringCharge] HARD DECLINE payment_id=#{payment.id} — stopping automated retries")
+      Rails.logger.warn("[RecurringCharge] HARD DECLINE payment_id=#{payment.id} — stopping automated retries without redacting saved card")
       exhaust_payment!
       return { success: false, rescheduled: false, exhausted: true, hard_decline: true, reason: decline_reason }
     end
 
     if new_retry_count >= MAX_FAILURE_ATTEMPTS
-      Rails.logger.warn("[RecurringCharge] MAX ATTEMPTS payment_id=#{payment.id} — stopping automated retries")
+      Rails.logger.warn("[RecurringCharge] MAX ATTEMPTS payment_id=#{payment.id} — stopping automated retries without redacting saved card")
       exhaust_payment!
       return { success: false, rescheduled: false, exhausted: true, reason: decline_reason }
     end
@@ -268,15 +267,15 @@ class RecurringChargeService
       GhlInboundWebhookService::NEEDS_NEW_CARD_EVENT
     )
 
-    Rails.logger.warn("[RecurringCharge] EXHAUSTED payment_id=#{payment.id} plan_id=#{plan.id} — needs new card")
+    Rails.logger.warn("[RecurringCharge] EXHAUSTED payment_id=#{payment.id} plan_id=#{plan.id} — needs new card; vault token preserved")
   end
 
-  def handle_no_card!
+  def handle_no_card!(reason = "no_vault_token")
     payment.update!(
       status:         :failed,
       needs_new_card: true,
       next_retry_at:  nil,
-      decline_reason: "no_vault_token"
+      decline_reason: reason
     )
 
     GhlInboundWebhookWorker.perform_async(
@@ -284,21 +283,49 @@ class RecurringChargeService
       GhlInboundWebhookService::NEEDS_NEW_CARD_EVENT
     )
 
-    Rails.logger.warn("[RecurringCharge] NO CARD payment_id=#{payment.id} user=#{user.email} — GHL needs_new_card notification fired")
+    Rails.logger.warn("[RecurringCharge] NO USABLE CARD payment_id=#{payment.id} user=#{user.email} reason=#{reason} — GHL needs_new_card notification fired")
   end
 
-  def vault_token_expired?(vault_token)
+  def vault_token_confirmed_redacted_or_missing?(payment_method)
+    vault_token = payment_method.vault_token
     return false if vault_token.blank?
+
     response = client.get("/payment_methods/#{vault_token}.json")
     pm = response.is_a?(Hash) ? response["payment_method"] : nil
-    return true if pm.nil?
-    pm["storage_state"].to_s == "redacted"
-  rescue Spreedly::Error => e
-    Rails.logger.warn("[RecurringCharge] Vault token lookup failed for user=#{user.email}: #{e.message}")
-    true
-  rescue StandardError => e
-    Rails.logger.error("[RecurringCharge] Vault token validation error for user=#{user.email}: #{e.class}: #{e.message}")
+
+    if pm.nil?
+      Rails.logger.warn("[RecurringCharge] Spreedly returned no payment_method for token=#{vault_token}; marking unusable but preserving local token")
+      return true
+    end
+
+    storage_state = pm["storage_state"].to_s
+    if storage_state == "redacted"
+      payment_method.update_columns(spreedly_redacted_at: Time.current, updated_at: Time.current)
+      return true
+    end
+
     false
+  rescue Spreedly::Error => e
+    # Only confirmed missing/not-found responses should pause the payment. Generic
+    # Spreedly errors/timeouts must not clear the vault token or mark the card gone.
+    if spreedly_payment_method_missing?(e)
+      Rails.logger.warn("[RecurringCharge] Spreedly confirmed missing token=#{vault_token}; marking unusable but preserving local token")
+      return true
+    end
+
+    Rails.logger.warn("[RecurringCharge] Spreedly token lookup error for user=#{user.email}; preserving token and continuing charge attempt: #{e.message}")
+    false
+  rescue StandardError => e
+    Rails.logger.error("[RecurringCharge] Vault token validation error for user=#{user.email}; preserving token and continuing charge attempt: #{e.class}: #{e.message}")
+    false
+  end
+
+  def spreedly_payment_method_missing?(error)
+    message = error.message.to_s.downcase
+    return true if message.include?("unable to find the specified payment method")
+    return true if message.include?("payment method not found")
+
+    error.respond_to?(:status) && error.status.to_i == 404
   end
 
   def hard_decline?(reason)
@@ -331,12 +358,8 @@ class RecurringChargeService
     first_or_fifteenth_recovery_day?(date) || biweekly_friday?(date)
   end
 
-  # Weekend adjustment only. True bank-holiday adjustment should be added later
-  # through a holiday calendar table/gem so it stays accurate year to year.
   def first_or_fifteenth_recovery_day?(date)
     return true if [1, 15].include?(date.day) && business_day?(date)
-
-    # If the 1st or 15th falls on Saturday/Sunday, run on the Friday before.
     return false unless date.friday?
 
     [date + 1.day, date + 2.days].any? { |future| [1, 15].include?(future.day) }
