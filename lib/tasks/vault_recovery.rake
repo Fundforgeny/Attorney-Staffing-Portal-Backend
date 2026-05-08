@@ -8,12 +8,15 @@
 #   bundle exec rails vault:validate_tokens SCOPE=all
 #   bundle exec rails vault:validate_tokens SCOPE=redacted_local
 #
+# Autopilot safe-fix task:
+#   bundle exec rails vault:autopilot
+#   bundle exec rails vault:autopilot APPLY=false
+#
 # Controlled restore task for one known recovered token:
 #   bundle exec rails vault:restore_token PAYMENT_METHOD_ID=123 VAULT_TOKEN=01ABC... REACTIVATE=false
 #
-# restore_token does not charge the card and does not automatically clear
-# needs_new_card. It only validates the token with Spreedly, then restores it to
-# the specified local PaymentMethod row.
+# None of these tasks charge cards. Autopilot only fixes local false-redacted flags
+# when Spreedly confirms the token is still retained/cached.
 #
 namespace :vault do
   desc "Print a read-only vault recovery report for payment methods and payments needing cards"
@@ -25,6 +28,11 @@ namespace :vault do
   task validate_tokens: :environment do
     scope = ENV.fetch("SCOPE", "active_targets")
     VaultTokenValidator.new(scope: scope).print_report
+  end
+
+  desc "Run all-in-one vault recovery autopilot; does safe local fixes only"
+  task autopilot: :environment do
+    VaultRecoveryAutopilot.new(apply: ENV.fetch("APPLY", "true")).call
   end
 
   desc "Restore one recovered vault token to one PaymentMethod after Spreedly validation"
