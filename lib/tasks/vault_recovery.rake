@@ -1,16 +1,38 @@
 # frozen_string_literal: true
 
-# Vault recovery reporting tasks.
+# Vault recovery tasks.
 #
-# These tasks are read-only. They do not charge cards, redact cards, archive cards,
-# restore cards, or modify payment/payment_method records.
-#
-# Manual run from Render shell:
+# Safe report/validation tasks:
 #   bundle exec rails vault:recovery_report
+#   bundle exec rails vault:validate_tokens
+#   bundle exec rails vault:validate_tokens SCOPE=all
+#   bundle exec rails vault:validate_tokens SCOPE=redacted_local
+#
+# Controlled restore task for one known recovered token:
+#   bundle exec rails vault:restore_token PAYMENT_METHOD_ID=123 VAULT_TOKEN=01ABC... REACTIVATE=false
+#
+# restore_token does not charge the card and does not automatically clear
+# needs_new_card. It only validates the token with Spreedly, then restores it to
+# the specified local PaymentMethod row.
 #
 namespace :vault do
   desc "Print a read-only vault recovery report for payment methods and payments needing cards"
   task recovery_report: :environment do
     VaultRecoveryReporter.new.print_report
+  end
+
+  desc "Validate local Spreedly vault tokens without charging or modifying records"
+  task validate_tokens: :environment do
+    scope = ENV.fetch("SCOPE", "active_targets")
+    VaultTokenValidator.new(scope: scope).print_report
+  end
+
+  desc "Restore one recovered vault token to one PaymentMethod after Spreedly validation"
+  task restore_token: :environment do
+    VaultTokenRestorer.new(
+      payment_method_id: ENV["PAYMENT_METHOD_ID"],
+      vault_token: ENV["VAULT_TOKEN"],
+      reactivate: ENV.fetch("REACTIVATE", "false")
+    ).call
   end
 end
