@@ -12,11 +12,16 @@
 #   bundle exec rails vault:autopilot
 #   bundle exec rails vault:autopilot APPLY=false
 #
+# Controlled overdue charge queue:
+#   bundle exec rails vault:charge_overdue APPLY=false
+#   bundle exec rails vault:charge_overdue APPLY=true
+#
 # Controlled restore task for one known recovered token:
 #   bundle exec rails vault:restore_token PAYMENT_METHOD_ID=123 VAULT_TOKEN=01ABC... REACTIVATE=false
 #
-# None of these tasks charge cards. Autopilot only fixes local false-redacted flags
-# when Spreedly confirms the token is still retained/cached.
+# Autopilot does not charge cards. charge_overdue queues real charge jobs, but
+# only for eligible active/unpaid overdue plans with usable non-archived,
+# non-redacted local vault tokens.
 #
 namespace :vault do
   desc "Print a read-only vault recovery report for payment methods and payments needing cards"
@@ -33,6 +38,11 @@ namespace :vault do
   desc "Run all-in-one vault recovery autopilot; does safe local fixes only"
   task autopilot: :environment do
     VaultRecoveryAutopilot.new(apply: ENV.fetch("APPLY", "true")).call
+  end
+
+  desc "Queue one controlled overdue charge attempt per eligible active/unpaid plan"
+  task charge_overdue: :environment do
+    OneTimeOverdueChargeRun.new(apply: ENV.fetch("APPLY", "false")).call
   end
 
   desc "Restore one recovered vault token to one PaymentMethod after Spreedly validation"
