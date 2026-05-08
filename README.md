@@ -13,6 +13,8 @@ Things you may want to cover:
 
 See `docs/admin_auth.md` for the current passwordless admin login flow and
 the environment settings required for admin magic links.
+See `docs/render_deployment.md` for the backend deployment authority. The
+backend deploy target is Render, not AWS ECS.
 
 * Database creation
 

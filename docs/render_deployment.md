@@ -6,6 +6,13 @@
 - Web service ID: `srv-d5b88h63jp1c73d3fu60`
 - Postgres database ID: `dpg-d5b5bmf5r7bs73a5p990-a`
 
+## Deployment authority
+
+- Backend deploy target: Render web service `srv-d5b88h63jp1c73d3fu60`
+- Backend should not deploy through AWS ECS
+- GitHub Actions should trigger Render deploys with `RENDER_API_KEY`
+- If Render GitHub auto-deploy is enabled directly in Render, that is acceptable; AWS deploy automation is not
+
 ## App/database wiring
 
 The Rails app reads `DATABASE_URL` in staging and production, so the Render web service should have the database wired through that environment variable.
