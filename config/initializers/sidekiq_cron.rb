@@ -5,16 +5,22 @@
 # regardless of daylight saving (Render runs UTC).
 #
 #   6:00 AM EST  = 11:00 AM UTC
+#   6:01 AM EST  = 11:01 UTC
 #   2:00 PM EST  = 19:00 UTC
 #   2:00 AM EST  = 07:00 UTC
+#   3:30 AM EST  = 08:30 UTC
 #
 # Job overview:
-#   scheduled_payment       — daily 6:00 AM EST: charge all due/retry installments
-#   overdue_retry           — daily 6:01 AM EST: retry ALL overdue/failed payments across all vaulted cards
-#   ghl_7_day_reminder      — daily 2 PM EST: GHL alert for payments due in 7 days
-#   ghl_24_hour_reminder    — daily 2 PM EST: GHL alert for payments due tomorrow
-#   ghl_30_days_late        — daily 2 PM EST: GHL alert for payments 30+ days overdue
-#   spreedly_account_updater — nightly 2 AM EST: sync updated card tokens from Spreedly
+#   scheduled_payment        — daily 6:00 AM EST: charge fresh due/retryable installments
+#   overdue_retry            — daily 6:01 AM EST: retry only overdue payments explicitly due for retry today
+#   ghl_7_day_reminder       — daily 2 PM EST: GHL alert for payments due in 7 days
+#   ghl_24_hour_reminder     — daily 2 PM EST: GHL alert for payments due tomorrow
+#   ghl_30_days_late         — daily 2 PM EST: GHL alert for payments 30+ days overdue
+#   stale_vault_cleanup      — monthly 3:30 AM EST: redact truly unused vault tokens after 12 months
+#
+# NOTE: Spreedly Account Updater is event-driven via inbound webhook callback.
+# No cron job needed — Spreedly POSTs to POST /webhooks/spreedly/account_updater
+# when their batch process completes (1-2x per month).
 
 Sidekiq.configure_server do |config|
   config.on(:startup) do
@@ -24,7 +30,7 @@ Sidekiq.configure_server do |config|
         "class"       => "ScheduledPaymentWorker",
         "args"        => [],
         "cron"        => "0 11 * * *",   # Daily at 6:00 AM EST (11:00 UTC)
-        "description" => "Charge all due and retry installment payments via Spreedly vault"
+        "description" => "Charge fresh due and retryable installment payments via Spreedly vault"
       },
 
       # ── GHL payment reminders (2 PM EST = 19:00 UTC) ────────────────────────
@@ -47,21 +53,24 @@ Sidekiq.configure_server do |config|
         "description" => "Fire GHL 30-days-late notification for overdue plans"
       },
 
-      # ── Overdue payment retry (6:01 AM EST = 11:01 UTC) ────────────────────────
-      # Runs 1 minute after ScheduledPaymentWorker. Finds ALL overdue/failed payments
-      # with any active vault token (regardless of plan status), tries every card per
-      # client before giving up, then fires GHL "payment failed" + "overdue" webhook
-      # ONLY after the FULL run across ALL users is complete — never mid-retry.
+      # ── Overdue payment retry (6:01 AM EST = 11:01 UTC) ──────────────────────
       "overdue_retry" => {
         "class"       => "OverdueRetryWorker",
         "args"        => [],
         "cron"        => "1 11 * * *",   # Daily at 6:01 AM EST (11:01 UTC)
-        "description" => "Retry all overdue/failed payments across all vaulted cards; fire GHL webhook after full run"
+        "description" => "Retry only overdue payments explicitly due for retry today"
       },
 
-      # NOTE: Spreedly Account Updater is event-driven via inbound webhook callback.
-      # No cron job needed — Spreedly POSTs to POST /webhooks/spreedly/account_updater
-      # when their batch process completes (1-2x per month).
+      # ── Stale vault cleanup (monthly 3:30 AM EST = 08:30 UTC) ────────────────
+      # Redacts truly unused vault tokens only after 12 months of no successful
+      # payment and no Account Updater activity. It does not run during payment
+      # failures, plan failures, or normal portal card listing.
+      "stale_vault_cleanup" => {
+        "class"       => "StaleVaultCleanupWorker",
+        "args"        => [],
+        "cron"        => "30 8 1 * *",   # Monthly on the 1st at 3:30 AM EST (08:30 UTC)
+        "description" => "Redact unused Spreedly vault tokens after 12 months with no successful charge or account updater activity"
+      }
     )
   end
 end
