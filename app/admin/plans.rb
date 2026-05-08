@@ -54,12 +54,14 @@ ActiveAdmin.register Plan do
     end
   end
 
-  # Manual charge against a specific payment method
+  # Manual charge against a specific active payment method only.
   member_action :manual_charge, method: :post do
     plan = Plan.find(params[:id])
     pm   = params[:payment_method_id].present? ?
-             plan.user.payment_methods.find(params[:payment_method_id]) :
+             plan.user.payment_methods.active.find(params[:payment_method_id]) :
              plan.user.payment_methods.ordered_for_user.first
+
+    raise "No active payment method on file" unless pm
 
     Admin::ManualVaultChargeService.new(
       plan:           plan,
@@ -84,31 +86,31 @@ ActiveAdmin.register Plan do
     redirect_to resource_path(plan), alert: "Payment not found."
   end
 
-  # Set a card as the client's default
+  # Set a card as the client's default. This is express reactivation/permission
+  # if the card had previously been archived.
   member_action :set_default_card, method: :post do
     plan = Plan.find(params[:id])
     pm   = plan.user.payment_methods.find(params[:payment_method_id])
-    plan.user.payment_methods.update_all(is_default: false)
-    pm.update!(is_default: true)
+    plan.user.payment_methods.active.update_all(is_default: false)
+    pm.update!(is_default: true, archived_at: nil)
     redirect_to resource_path(plan), notice: "#{pm.card_brand&.upcase} ••••#{pm.last4} set as default card."
   rescue ActiveRecord::RecordNotFound
     redirect_to resource_path(plan), alert: "Card not found."
   end
 
-  # Delete a card from the client's profile
+  # Remove a card from active use without redacting it from Spreedly.
   member_action :delete_card, method: :delete do
     plan = Plan.find(params[:id])
     pm   = plan.user.payment_methods.find(params[:payment_method_id])
 
-    # Redact from Spreedly vault
-    begin
-      Spreedly::PaymentMethodsService.new.redact_payment_method(token: pm.vault_token) if pm.vault_token.present?
-    rescue => e
-      Rails.logger.warn("[Admin] Spreedly redact failed for #{pm.vault_token}: #{e.message}")
+    deleted_default = pm.is_default?
+    pm.archive!
+
+    if deleted_default
+      plan.user.payment_methods.active.order(created_at: :desc).first&.update!(is_default: true)
     end
 
-    pm.destroy!
-    redirect_to resource_path(plan), notice: "Card removed successfully."
+    redirect_to resource_path(plan), notice: "Card removed from active use. Vault token preserved and will not be used without express reactivation/permission."
   rescue ActiveRecord::RecordNotFound
     redirect_to resource_path(plan), alert: "Card not found."
   end
@@ -167,7 +169,6 @@ ActiveAdmin.register Plan do
     panel "Plan Details" do
       div class: "aa-plan-accordion" do
 
-        # ── Plan Summary ──────────────────────────────────────────────────
         details open: true, class: "aa-accordion-item" do
           summary "Plan Summary"
           div class: "aa-accordion-body" do
@@ -192,7 +193,6 @@ ActiveAdmin.register Plan do
           end
         end
 
-        # ── Client Info ───────────────────────────────────────────────────
         details class: "aa-accordion-item" do
           summary "Client Information"
           div class: "aa-accordion-body" do
@@ -219,7 +219,6 @@ ActiveAdmin.register Plan do
           end
         end
 
-        # ── Card Management ───────────────────────────────────────────────
         details open: true, class: "aa-accordion-item", id: "card-management-section" do
           summary "Card Management"
           div class: "aa-accordion-body" do
@@ -239,13 +238,13 @@ ActiveAdmin.register Plan do
                       concat link_to("Set Default",
                         set_default_card_admin_plan_path(plan, payment_method_id: c.id),
                         method: :post,
-                        data: { confirm: "Set #{c.card_brand&.upcase} ••••#{c.last4} as default?" },
+                        data: { confirm: "Set #{c.card_brand&.upcase} ••••#{c.last4} as default? Only do this with express permission to use this card." },
                         class: "button")
                     end
                     concat link_to("Remove",
                       delete_card_admin_plan_path(plan, payment_method_id: c.id),
                       method: :delete,
-                      data: { confirm: "Remove #{c.card_brand&.upcase} ••••#{c.last4}? This will also redact it from the vault." },
+                      data: { confirm: "Remove #{c.card_brand&.upcase} ••••#{c.last4} from active use? The vault token will be preserved and not redacted." },
                       class: "button",
                       style: "background:#e74c3c;color:#fff;")
                   end
@@ -255,9 +254,9 @@ ActiveAdmin.register Plan do
               para "No saved cards on file for this client."
             end
 
-            # ── Charge Against Any Card ───────────────────────────────────
             if all_cards.any?
               h4 "Manual Charge", style: "margin-top:20px;"
+              para "Only active cards appear here. Archived cards may not be used without express reactivation/permission.", style: "color:#667085;font-size:12px;"
               div id: "manual-vault-charge" do
                 form action: manual_charge_admin_plan_path(plan), method: :post do
                   input type: :hidden, name: :authenticity_token, value: form_authenticity_token
@@ -292,7 +291,6 @@ ActiveAdmin.register Plan do
               end
             end
 
-            # ── Add New Card (Spreedly iFrame) ────────────────────────────
             h4 "Add New Card for Client", style: "margin-top:24px;", id: "add-card-section"
             para "Use the Spreedly Express checkout or paste a vault token to add a new card to this client's profile.", style: "color:#667085;font-size:13px;"
             div do
@@ -339,7 +337,6 @@ ActiveAdmin.register Plan do
           end
         end
 
-        # ── Payments & Retry Status ───────────────────────────────────────
         details open: true, class: "aa-accordion-item" do
           summary "Payments & Retry Status"
           div class: "aa-accordion-body" do
@@ -393,7 +390,6 @@ ActiveAdmin.register Plan do
           end
         end
 
-        # ── Grace Week Requests ───────────────────────────────────────────
         if grace_requests.any?
           details open: grace_requests.where(status: :pending).any?, class: "aa-accordion-item" do
             summary "Grace Week Requests #{grace_requests.where(status: :pending).any? ? '⚠ Pending Review' : ''}"
@@ -447,7 +443,6 @@ ActiveAdmin.register Plan do
           end
         end
 
-        # ── Contract Documents ────────────────────────────────────────────
         details class: "aa-accordion-item" do
           summary "Contract Documents"
           div class: "aa-accordion-body" do
@@ -472,7 +467,6 @@ ActiveAdmin.register Plan do
             end
           end
         end
-
       end
     end
   end
@@ -497,16 +491,16 @@ ActiveAdmin.register Plan do
       exp_month:       exp_month.positive? ? exp_month : nil,
       exp_year:        exp_year.positive? ? exp_year : nil,
       cardholder_name: params[:cardholder_name].presence || user.full_name,
-      is_default:      user.payment_methods.blank?
+      archived_at:     nil,
+      is_default:      user.payment_methods.active.blank?
     )
     pm.save!
 
-    redirect_to resource_path(plan), notice: "Card ••••#{pm.last4} added successfully."
+    redirect_to resource_path(plan), notice: "Card ••••#{pm.last4} added/reactivated successfully."
   rescue ActiveRecord::RecordInvalid => e
     redirect_to resource_path(plan), alert: "Failed to add card: #{e.message}"
   end
 
-  # ── Form ──────────────────────────────────────────────────────────────────
   form do |f|
     f.semantic_errors
     f.inputs "Plan Details" do
