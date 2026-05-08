@@ -16,13 +16,15 @@ class Api::V1::Admin::PaymentsController < Api::V1::Admin::BaseController
     scope = scope.where("retry_count > 0")                         if params[:has_retries] == "true"
     scope = scope.where("next_retry_at <= ?", Date.today)           if params[:retry_due] == "true"
     scope = scope.refunded                                          if params[:refunded] == "true"
-    scope = scope.where("scheduled_at >= ?", params[:from].to_date) if params[:from].present?
-    scope = scope.where("scheduled_at <= ?", params[:to].to_date)   if params[:to].present?
+    scope = apply_transaction_date_filter(scope)
 
     if params[:q].present?
+      like_query = "%#{ActiveRecord::Base.sanitize_sql_like(params[:q].to_s.strip)}%"
       scope = scope.joins(plan: :user)
-                   .where("users.email ILIKE ? OR users.first_name ILIKE ? OR users.last_name ILIKE ?",
-                          "%#{params[:q]}%", "%#{params[:q]}%", "%#{params[:q]}%")
+                   .where(
+                     "users.email ILIKE ? OR users.first_name ILIKE ? OR users.last_name ILIKE ? OR users.phone ILIKE ? OR payments.charge_id ILIKE ? OR payments.refund_transaction_id ILIKE ?",
+                     like_query, like_query, like_query, like_query, like_query, like_query
+                   )
     end
 
     paged = paginate(scope)
@@ -66,6 +68,25 @@ class Api::V1::Admin::PaymentsController < Api::V1::Admin::BaseController
 
   private
 
+  def apply_transaction_date_filter(scope)
+    from = parse_date_param(params[:from])
+    to = parse_date_param(params[:to])
+    return scope unless from || to
+
+    transaction_date_sql = "COALESCE(payments.paid_at, payments.scheduled_at, payments.created_at)"
+    scope = scope.where("#{transaction_date_sql} >= ?", from.beginning_of_day) if from
+    scope = scope.where("#{transaction_date_sql} <= ?", to.end_of_day) if to
+    scope
+  end
+
+  def parse_date_param(value)
+    return nil if value.blank?
+
+    Date.parse(value.to_s)
+  rescue ArgumentError, TypeError
+    nil
+  end
+
   def set_payment
     @payment = Payment.includes(plan: :user, payment_method: []).find(params[:id])
   rescue ActiveRecord::RecordNotFound
@@ -83,6 +104,7 @@ class Api::V1::Admin::PaymentsController < Api::V1::Admin::BaseController
       total_amount:        p.total_payment_including_fee.to_f,
       refundable_amount:   p.refundable_amount.to_f,
       refunded_amount:     p.refunded_amount.to_f,
+      charge_id:           p.charge_id,
       refund_transaction_id: p.refund_transaction_id,
       refunded_at:         p.refunded_at,
       last_refund_reason:  p.last_refund_reason,
