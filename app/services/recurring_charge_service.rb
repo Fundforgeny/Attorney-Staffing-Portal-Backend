@@ -5,64 +5,44 @@
 #
 # RETRY LOGIC
 # -----------
-# There is NO fixed attempt-count cap. Instead, we retry on EVERY qualifying payday
-# within a 28-day window from the original due date. This means a payment can receive
-# 6-10+ attempts depending on the calendar.
+# Failed-card recovery is intentionally conservative so automated retries do not
+# look like card testing or repeated automated probing.
 #
-# Qualifying retry days (attempted in this order of priority, but all are hit):
-#   - The 1st of the month
-#   - The 15th of the month
-#   - Biweekly Fridays (every 14 days from BIWEEKLY_ANCHOR)
-#   - Every Thursday
-#   - Every Friday
-#
-# Between each attempt there is a minimum 1-day gap to avoid double-charging.
-# After the 28-day window expires with no success, the payment is exhausted:
-#   - needs_new_card is set to true
-#   - A GHL "needs new card" alert fires at 2 PM EST
+# Policy:
+#   - Fresh scheduled payments may run on their scheduled due date.
+#   - Soft-declined payments are retried only on controlled recovery paydays:
+#       * 1st of the month
+#       * 15th of the month
+#       * the business day before the 1st/15th when that date falls on a weekend
+#       * biweekly Fridays based on BIWEEKLY_ANCHOR
+#   - No generic Thursday/Friday retries.
+#   - Minimum 5-day gap between attempts.
+#   - Maximum 4 failed attempts total for a payment, including the first failed charge.
+#   - Maximum 35-day recovery window from the original due date.
+#   - After the limit/window is reached, stop charging and wait for Account Updater
+#     or the client to provide a new card.
 #
 # HARD DECLINE HANDLING
 # ---------------------
-# Certain decline reasons indicate the card can never be retried and a new card
-# is required immediately. These bypass the 28-day retry window and trigger
-# needs_new_card + GHL alert right away:
-#   - Account closed / closed account
-#   - Pick up card (card reported stolen/lost by issuer)
-#   - Stolen card / lost card
-#   - Payment method has been redacted (Spreedly deleted the vault token)
-#   - Do not honor (permanent block by issuer)
-#   - Invalid account / no such account
-#   - Revocation of authorization
-#   - Card not permitted / transaction not permitted
-#   - Restricted card / security violation
-#   - Fraud / fraudulent
-#   - Invalid card number / no card record
-#   - Card member cancelled
-#
-# Soft declines (insufficient funds, generic decline, etc.) still follow the
-# normal 28-day retry window with payday-based rescheduling.
+# Certain decline reasons indicate the card should not be retried and a new card
+# is required immediately. These bypass the retry window and trigger needs_new_card.
 #
 # ACCOUNT UPDATER
 # ---------------
-# Spreedly Account Updater runs as a batch process (1-2x/month).
-# When Spreedly refreshes a card, they POST to our callback URL
-# (POST /webhooks/spreedly/account_updater).
-# That controller updates the local PaymentMethod and requeues any blocked payments.
-# RecurringChargeService simply uses whatever vault_token is currently on file —
-# no pre-charge validation or polling is needed here.
+# Spreedly Account Updater is callback-driven. When Spreedly refreshes a card,
+# it POSTs to POST /webhooks/spreedly/account_updater. That controller updates
+# the local PaymentMethod and can requeue blocked payments.
 #
 class RecurringChargeService
-  RETRY_WINDOW    = 28.days   # Maximum days after original due date to keep retrying
-  MIN_GAP_DAYS    = 1         # Minimum days between consecutive attempts
+  RETRY_WINDOW         = 35.days
+  MIN_GAP_DAYS         = 5
+  MAX_FAILURE_ATTEMPTS = 4
 
   # Biweekly payday anchor — any known Friday that is a payday.
   # Adjust this date to match the most common biweekly pay cycle in your client base.
   BIWEEKLY_ANCHOR = Date.new(2024, 1, 5)  # Friday, Jan 5 2024
 
   # 3DS / SCA patterns — these are NOT hard declines on recurring charges.
-  # Stripe/Spreedly may return these when 3DS is triggered on a card that doesn't
-  # support it or when we don't have a SCA provider configured. Treat as soft
-  # declines so the Composer workflow can recover them on the next retry cycle.
   THREE_DS_PATTERNS = [
     "3ds",
     "3d secure",
@@ -120,10 +100,6 @@ class RecurringChargeService
       return { success: false, rescheduled: false, exhausted: true, reason: "no_vault_token" }
     end
 
-    # Validate vault token is still active in Spreedly before attempting charge.
-    # Tokens can be auto-redacted after ~90 days without a successful charge or retain call.
-    # If the token is expired/redacted, treat it the same as no card — clear the stale
-    # token and fire the GHL needs-new-card notification.
     if vault_token_expired?(payment_method.vault_token)
       Rails.logger.warn("[RecurringCharge] Vault token expired/redacted for payment_id=#{payment.id} user=#{user.email} — clearing token and notifying")
       payment_method.update_columns(vault_token: nil, updated_at: Time.current)
@@ -153,8 +129,6 @@ class RecurringChargeService
 
   attr_reader :payment, :plan, :user, :client
 
-  # ── Payment method resolution ────────────────────────────────────────────────
-
   def resolve_payment_method
     pm = payment.payment_method
     return pm if pm&.vault_token.present?
@@ -162,11 +136,7 @@ class RecurringChargeService
     user.payment_methods.ordered_for_user.first
   end
 
-  # ── Spreedly purchase ────────────────────────────────────────────────────────
-
   def attempt_purchase!(payment_method)
-    # Ensure we have the latest billing data from GHL before charging.
-    # This is a no-op if all required fields are already present on the user.
     GhlBillingSyncService.new(user).sync_if_needed! rescue nil
     user.reload
 
@@ -178,11 +148,7 @@ class RecurringChargeService
         amount:               amount_cents,
         currency_code:        "USD",
         retain_on_success:    false,
-        description:          "Installment payment \u2014 #{plan.name}",
-        # ── Stripe Radar required signals ──────────────────────────────────────
-        # Passing email, name, and billing address dramatically improves fraud
-        # model accuracy and prevents Radar from blocking legitimate charges.
-        # See: https://docs.stripe.com/radar/optimize-risk-factors
+        description:          "Installment payment — #{plan.name}",
         email:                user.email.presence,
         billing_address: {
           name:         user.full_name.presence,
@@ -195,7 +161,6 @@ class RecurringChargeService
       }
     }
 
-    # Remove billing_address key entirely if empty (avoid sending blank hash)
     payload[:transaction].delete(:billing_address) if payload.dig(:transaction, :billing_address)&.empty?
     payload[:transaction].delete(:email) if payload.dig(:transaction, :email).blank?
 
@@ -211,7 +176,6 @@ class RecurringChargeService
     response.fetch("transaction")
   end
 
-  # Convert common country names to ISO 3166-1 alpha-2 codes for Spreedly.
   def country_code(name)
     return name if name.blank? || name.length == 2
     {
@@ -221,8 +185,6 @@ class RecurringChargeService
     }.fetch(name.downcase.strip, name)
   end
 
-  # ── Success path ─────────────────────────────────────────────────────────────
-
   def finalize_success!(payment_method, transaction)
     payment.update!(
       status:                  :succeeded,
@@ -230,7 +192,8 @@ class RecurringChargeService
       processor_transaction_id: transaction["gateway_transaction_id"].presence || payment.processor_transaction_id,
       paid_at:                 Time.current,
       decline_reason:          nil,
-      needs_new_card:          false
+      needs_new_card:          false,
+      next_retry_at:           nil
     )
 
     plan.update!(status: :paid) if plan.remaining_balance_logic <= 0
@@ -243,8 +206,6 @@ class RecurringChargeService
 
     Rails.logger.info("[RecurringCharge] SUCCESS payment_id=#{payment.id} plan_id=#{plan.id} amount=#{payment.total_payment_including_fee}")
   end
-
-  # ── Failure path ─────────────────────────────────────────────────────────────
 
   def handle_failure!(transaction, decline_reason)
     new_retry_count = payment.retry_count.to_i + 1
@@ -262,14 +223,18 @@ class RecurringChargeService
 
     Rails.logger.warn("[RecurringCharge] FAILED payment_id=#{payment.id} attempt=#{new_retry_count} reason=#{decline_reason}")
 
-    # Hard declines: card cannot be retried — exhaust immediately regardless of window.
     if hard_decline?(decline_reason)
-      Rails.logger.warn("[RecurringCharge] HARD DECLINE payment_id=#{payment.id} — exhausting immediately, needs new card")
+      Rails.logger.warn("[RecurringCharge] HARD DECLINE payment_id=#{payment.id} — stopping automated retries")
       exhaust_payment!
       return { success: false, rescheduled: false, exhausted: true, hard_decline: true, reason: decline_reason }
     end
 
-    # Find the next qualifying payday after today (minimum 1-day gap).
+    if new_retry_count >= MAX_FAILURE_ATTEMPTS
+      Rails.logger.warn("[RecurringCharge] MAX ATTEMPTS payment_id=#{payment.id} — stopping automated retries")
+      exhaust_payment!
+      return { success: false, rescheduled: false, exhausted: true, reason: decline_reason }
+    end
+
     next_date = next_payday_after(Time.current.to_date, window_end)
 
     if next_date.nil?
@@ -282,7 +247,6 @@ class RecurringChargeService
       next_retry_at: next_date.to_time(:utc)
     )
 
-    # Fire GHL "payment failed" alert at 2 PM EST.
     GhlInboundWebhookWorker.perform_async(
       payment.id,
       GhlInboundWebhookService::PAYMENT_FAILED_EVENT
@@ -295,7 +259,8 @@ class RecurringChargeService
   def exhaust_payment!
     payment.update!(
       status:         :failed,
-      needs_new_card: true
+      needs_new_card: true,
+      next_retry_at:  nil
     )
 
     GhlInboundWebhookWorker.perform_async(
@@ -310,6 +275,7 @@ class RecurringChargeService
     payment.update!(
       status:         :failed,
       needs_new_card: true,
+      next_retry_at:  nil,
       decline_reason: "no_vault_token"
     )
 
@@ -321,95 +287,71 @@ class RecurringChargeService
     Rails.logger.warn("[RecurringCharge] NO CARD payment_id=#{payment.id} user=#{user.email} — GHL needs_new_card notification fired")
   end
 
-  # ── Vault token validation ────────────────────────────────────────────────────
-
-  # Returns true if the vault token no longer exists in Spreedly (404 response).
-  # Spreedly auto-redacts payment methods after ~90 days without a successful
-  # charge or explicit retain call. A 404 means the token is gone and cannot be
-  # charged — the client must re-enter their card details.
   def vault_token_expired?(vault_token)
     return false if vault_token.blank?
     response = client.get("/payment_methods/#{vault_token}.json")
-    # If we get a response without error, the token is valid.
     pm = response.is_a?(Hash) ? response["payment_method"] : nil
     return true if pm.nil?
-    # Also treat explicitly redacted tokens as expired.
     pm["storage_state"].to_s == "redacted"
   rescue Spreedly::Error => e
-    # 404 or any error fetching the payment method means it's gone.
     Rails.logger.warn("[RecurringCharge] Vault token lookup failed for user=#{user.email}: #{e.message}")
     true
   rescue StandardError => e
-    # On unexpected errors, do NOT block the charge — assume token is valid.
     Rails.logger.error("[RecurringCharge] Vault token validation error for user=#{user.email}: #{e.class}: #{e.message}")
     false
   end
 
-  # ── Hard decline detection ────────────────────────────────────────────────────
-
-  # Returns true if the decline reason indicates the card can never be retried.
-  # 3DS/SCA errors are explicitly excluded — they are soft declines on recurring
-  # charges and should be retried via the Composer workflow recovery cycle.
   def hard_decline?(reason)
     return false if reason.blank?
 
     normalized = reason.to_s.downcase
-
-    # Never treat 3DS/SCA errors as hard declines on recurring charges.
     return false if THREE_DS_PATTERNS.any? { |pattern| normalized.include?(pattern) }
 
     HARD_DECLINE_PATTERNS.any? { |pattern| normalized.include?(pattern) }
   end
 
-  # Returns true if the decline is a 3DS/SCA authentication challenge.
-  # These are retried via the Composer workflow on the next payday cycle.
   def three_ds_decline?(reason)
     return false if reason.blank?
     normalized = reason.to_s.downcase
     THREE_DS_PATTERNS.any? { |pattern| normalized.include?(pattern) }
   end
 
-  # ── Payday schedule logic ─────────────────────────────────────────────────────
-  #
-  # Returns the next qualifying payday strictly after `from_date` (with a minimum
-  # MIN_GAP_DAYS gap) that falls on or before `window_end`.
-  #
-  # Qualifying days — ALL of the following are attempted, not just the first match:
-  #   • 1st of the month
-  #   • 15th of the month
-  #   • Biweekly Fridays (every 14 days from BIWEEKLY_ANCHOR)
-  #   • Every Thursday
-  #   • Every Friday
-  #
   def next_payday_after(from_date, window_end)
     candidate = from_date + MIN_GAP_DAYS
 
     while candidate <= window_end
-      return candidate if payday?(candidate)
+      return candidate if recovery_payday?(candidate)
       candidate += 1
     end
 
     nil
   end
 
-  def payday?(date)
-    return true if date.day == 1
-    return true if date.day == 15
-    return true if biweekly_friday?(date)
-    return true if date.wday == 4  # Thursday
-    return true if date.wday == 5  # Friday
+  def recovery_payday?(date)
+    first_or_fifteenth_recovery_day?(date) || biweekly_friday?(date)
+  end
 
-    false
+  # Weekend adjustment only. True bank-holiday adjustment should be added later
+  # through a holiday calendar table/gem so it stays accurate year to year.
+  def first_or_fifteenth_recovery_day?(date)
+    return true if [1, 15].include?(date.day) && business_day?(date)
+
+    # If the 1st or 15th falls on Saturday/Sunday, run on the Friday before.
+    return false unless date.friday?
+
+    [date + 1.day, date + 2.days].any? { |future| [1, 15].include?(future.day) }
+  end
+
+  def business_day?(date)
+    !date.saturday? && !date.sunday?
   end
 
   def biweekly_friday?(date)
-    return false unless date.wday == 5  # Must be a Friday
+    return false unless date.friday?
 
     days_since_anchor = (date - BIWEEKLY_ANCHOR).to_i
     (days_since_anchor % 14).zero?
   end
-
-  # ── Helpers ──────────────────────────────────────────────────────────────────
 
   def transaction_succeeded?(transaction)
     return false if transaction.blank?
