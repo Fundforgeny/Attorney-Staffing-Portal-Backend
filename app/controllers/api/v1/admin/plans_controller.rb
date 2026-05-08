@@ -12,7 +12,6 @@ class Api::V1::Admin::PlansController < Api::V1::Admin::BaseController
   def index
     scope = Plan.includes(:user).order(created_at: :desc)
 
-    # Filters
     scope = scope.where(status: params[:status]) if params[:status].present?
     scope = scope.where("plans.name ILIKE ?", "%#{params[:q]}%") if params[:q].present?
     scope = scope.joins(:payments).where(payments: { needs_new_card: true }).distinct if params[:needs_card] == "true"
@@ -28,10 +27,10 @@ class Api::V1::Admin::PlansController < Api::V1::Admin::BaseController
 
   # GET /api/v1/admin/plans/:id
   def show
-    user     = @plan.user
-    payments = @plan.payments.includes(:payment_method).order(scheduled_at: :asc, created_at: :asc)
-    cards    = user&.payment_methods&.ordered_for_user || []
-    graces   = @plan.grace_week_requests.order(created_at: :desc)
+    user      = @plan.user
+    payments  = @plan.payments.includes(:payment_method).order(scheduled_at: :asc, created_at: :asc)
+    cards     = user&.payment_methods&.ordered_for_user || []
+    graces    = @plan.grace_week_requests.order(created_at: :desc)
     agreement = @plan.agreement
 
     render_success(data: {
@@ -54,10 +53,10 @@ class Api::V1::Admin::PlansController < Api::V1::Admin::BaseController
   # POST /api/v1/admin/plans/:id/manual_charge
   def manual_charge
     pm = params[:payment_method_id].present? ?
-           @plan.user.payment_methods.find(params[:payment_method_id]) :
+           @plan.user.payment_methods.active.find(params[:payment_method_id]) :
            @plan.user.payment_methods.ordered_for_user.first
 
-    raise "No payment method on file" unless pm
+    raise "No active payment method on file" unless pm
 
     Admin::ManualVaultChargeService.new(
       plan:           @plan,
@@ -83,8 +82,8 @@ class Api::V1::Admin::PlansController < Api::V1::Admin::BaseController
   # POST /api/v1/admin/plans/:id/set_default_card
   def set_default_card
     pm = @plan.user.payment_methods.find(params[:payment_method_id])
-    @plan.user.payment_methods.update_all(is_default: false)
-    pm.update!(is_default: true)
+    @plan.user.payment_methods.active.update_all(is_default: false)
+    pm.update!(is_default: true, archived_at: nil)
     render_success(message: "#{pm.card_brand&.upcase} ••••#{pm.last4} set as default.")
   rescue ActiveRecord::RecordNotFound
     render_error(message: "Card not found.", status: :not_found)
@@ -92,14 +91,20 @@ class Api::V1::Admin::PlansController < Api::V1::Admin::BaseController
 
   # DELETE /api/v1/admin/plans/:id/delete_card
   def delete_card
+    # Absolute vault policy: never redact from Spreedly from admin removal.
+    # Admin removal only archives the local card. Archived cards are not used
+    # for automated/default/manual charging unless expressly reactivated.
+    # Spreedly redaction is allowed only through StaleVaultCleanupWorker after
+    # the 12-month rule is satisfied.
     pm = @plan.user.payment_methods.find(params[:payment_method_id])
-    begin
-      Spreedly::PaymentMethodsService.new.redact_payment_method(token: pm.vault_token) if pm.vault_token.present?
-    rescue => e
-      Rails.logger.warn("[Admin] Spreedly redact failed for #{pm.vault_token}: #{e.message}")
+    deleted_default = pm.is_default?
+    pm.archive!
+
+    if deleted_default
+      @plan.user.payment_methods.active.order(created_at: :desc).first&.update!(is_default: true)
     end
-    pm.destroy!
-    render_success(message: "Card removed.")
+
+    render_success(message: "Card removed from active use. Vault token preserved and will not be used without express reactivation/permission.")
   rescue ActiveRecord::RecordNotFound
     render_error(message: "Card not found.", status: :not_found)
   end
@@ -191,13 +196,14 @@ class Api::V1::Admin::PlansController < Api::V1::Admin::BaseController
 
   def card_detail(pm)
     {
-      id:         pm.id,
-      card_brand: pm.card_brand,
-      last4:      pm.last4,
-      exp_month:  pm.exp_month,
-      exp_year:   pm.exp_year,
-      is_default: pm.is_default?,
-      created_at: pm.created_at
+      id:          pm.id,
+      card_brand:  pm.card_brand,
+      last4:       pm.last4,
+      exp_month:   pm.exp_month,
+      exp_year:    pm.exp_year,
+      is_default:  pm.is_default?,
+      archived_at: pm.archived_at,
+      created_at:  pm.created_at
     }
   end
 
