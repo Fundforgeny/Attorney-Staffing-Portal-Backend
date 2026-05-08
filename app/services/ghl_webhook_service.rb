@@ -2,6 +2,7 @@ require "net/http"
 
 class GhlWebhookService
   WEBHOOK_URL = "https://services.leadconnectorhq.com/hooks/ypwiHcCIbSqZMzXzrIhd/webhook-trigger/6TXApF9cSV2jsioESYoE".freeze
+  ADMIN_LOGIN_WEBHOOK_URL = "https://services.leadconnectorhq.com/hooks/ypwiHcCIbSqZMzXzrIhd/webhook-trigger/d3d0e182-2544-4601-8ab5-636e9663c2f8".freeze
 
   def self.send_login_magic_link!(user:, login_magic_link:)
     payload = {
@@ -35,10 +36,11 @@ class GhlWebhookService
       last_name: admin.last_name,
       phone: admin.contact_number,
       login_magic_link: login_magic_link,
+      status: "login",
       portal_type: "admin"
     }
 
-    uri = URI.parse(WEBHOOK_URL)
+    uri = URI.parse(ADMIN_LOGIN_WEBHOOK_URL)
     http = Net::HTTP.new(uri.host, uri.port)
     http.use_ssl = true
 
