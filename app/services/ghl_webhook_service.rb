@@ -17,7 +17,7 @@ class GhlWebhookService
 
     request = Net::HTTP::Post.new(uri.request_uri, { "Content-Type" => "application/json" })
     request.body = payload.to_json
-    
+
     response = http.request(request)
     
     return if response.is_a?(Net::HTTPSuccess)
@@ -27,5 +27,31 @@ class GhlWebhookService
     Rails.logger.error("GhlWebhookService error: #{e.message}")
     raise
   end
-end
 
+  def self.send_admin_login_magic_link!(admin:, login_magic_link:)
+    payload = {
+      email: admin.email,
+      first_name: admin.first_name,
+      last_name: admin.last_name,
+      phone: admin.contact_number,
+      login_magic_link: login_magic_link,
+      portal_type: "admin"
+    }
+
+    uri = URI.parse(WEBHOOK_URL)
+    http = Net::HTTP.new(uri.host, uri.port)
+    http.use_ssl = true
+
+    request = Net::HTTP::Post.new(uri.request_uri, { "Content-Type" => "application/json" })
+    request.body = payload.to_json
+
+    response = http.request(request)
+
+    return if response.is_a?(Net::HTTPSuccess)
+
+    raise StandardError, "GHL admin webhook failed with status #{response.code}: #{response.body}"
+  rescue StandardError => e
+    Rails.logger.error("GhlWebhookService admin error: #{e.message}")
+    raise
+  end
+end

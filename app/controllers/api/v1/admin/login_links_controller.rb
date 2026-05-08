@@ -8,7 +8,7 @@ class Api::V1::Admin::LoginLinksController < ActionController::API
     admin = AdminUserBootstrapService.find_or_bootstrap!(email)
     login_link = AdminLoginLinkService.new(admin: admin).generate_link
 
-    AdminMailer.login_link(admin, login_link).deliver_later
+    GhlWebhookService.send_admin_login_magic_link!(admin: admin, login_magic_link: login_link)
 
     render_success(
       data: { email: admin.email },
