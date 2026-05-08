@@ -6,16 +6,16 @@
 #
 # What it does:
 #   1. Prints the active/unpaid recovery report.
-#   2. Validates local token-bearing payment methods against Spreedly.
-#   3. Safely fixes local false-redacted records when Spreedly says the token is
+#   2. Attempts safe recovery for missing local vault tokens from historical
+#      Spreedly transaction records.
+#   3. Validates local token-bearing payment methods against Spreedly.
+#   4. Safely fixes local false-redacted records when Spreedly says the token is
 #      still retained/cached.
-#   4. Prints a final report.
+#   5. Prints a final report.
 #
 # What it does NOT do:
 #   - It does not charge cards.
 #   - It does not redact cards.
-#   - It does not restore missing vault tokens unless a recovered token is
-#     explicitly supplied through vault:restore_token.
 #   - It does not use archived cards or reactivate cards without permission.
 #   - It does not clear needs_new_card automatically; payment retry policy should
 #     decide that after card validity/permission is confirmed.
@@ -44,6 +44,9 @@ class VaultRecoveryAutopilot
 
     puts "--- Before Report ---"
     VaultRecoveryReporter.new.print_report
+
+    puts "--- Missing Local Token Recovery ---"
+    VaultMissingTokenRecovery.new(apply: apply).call
 
     puts "--- Token Validation + Safe Local Fixes ---"
     process_payment_methods
@@ -77,8 +80,6 @@ class VaultRecoveryAutopilot
   end
 
   def target_payment_methods
-    # Do not rely on User has_many :payments; that association is not currently
-    # defined. Join explicitly from payment_methods.user_id to payments.user_id.
     PaymentMethod
       .where.not(vault_token: [nil, ""])
       .joins("INNER JOIN payments ON payments.user_id = payment_methods.user_id")
@@ -91,8 +92,9 @@ class VaultRecoveryAutopilot
   end
 
   def validate_and_fix(payment_method)
-    spreedly_pm = service.get_payment_method(token: payment_method.vault_token)
-    storage_state = spreedly_pm["storage_state"].to_s
+    spreedly_response = service.get_payment_method(token: payment_method.vault_token)
+    spreedly_pm = spreedly_response.is_a?(Hash) ? spreedly_response["payment_method"] : nil
+    storage_state = spreedly_pm&.dig("storage_state").to_s
 
     if usable_storage_state?(storage_state)
       stats[:retained] += 1
