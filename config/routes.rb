@@ -88,11 +88,15 @@ Rails.application.routes.draw do
         resources :payments, only: [:index, :show] do
           member do
             post :charge_now
+            post :refund
           end
         end
 
         # Users
         resources :users, only: [:index, :show]
+
+        # Admin Users
+        resources :admin_users, only: [:index, :create, :show, :update]
 
         # Leads (non-paid plans)
         resources :leads, only: [:index]
