@@ -1,0 +1,67 @@
+<div class="panel">
+  <h3>Refund Payment #<%= @payment.id %></h3>
+
+  <div class="attributes_table">
+    <table>
+      <tbody>
+        <tr>
+          <th>Client</th>
+          <td><%= @payment.user&.full_name || @payment.user&.email || "Unknown" %></td>
+        </tr>
+        <tr>
+          <th>Total Charged</th>
+          <td><%= number_to_currency(@payment.total_payment_including_fee || @payment.payment_amount) %></td>
+        </tr>
+        <tr>
+          <th>Already Refunded</th>
+          <td><%= number_to_currency(@payment.refunded_amount) %></td>
+        </tr>
+        <tr>
+          <th>Refundable Balance</th>
+          <td><%= number_to_currency(@payment.refundable_amount) %></td>
+        </tr>
+      </tbody>
+    </table>
+  </div>
+
+  <%= active_admin_form_for :refund_request, url: refund_admin_payment_path(@payment), method: :post do |f| %>
+    <fieldset class="inputs">
+      <ol>
+        <li class="string input">
+          <label for="refund_amount">Refund Amount (USD)</label>
+          <input
+            id="refund_amount"
+            name="amount"
+            type="number"
+            min="0.01"
+            max="<%= @payment.refundable_amount.to_s('F') %>"
+            step="0.01"
+            value="<%= @payment.refundable_amount.to_s('F') %>"
+          />
+          <p class="inline-hints">Use the remaining refundable balance for a full refund, or lower it for a partial refund.</p>
+        </li>
+        <li class="string input">
+          <label for="refund_reason">Reason</label>
+          <input
+            id="refund_reason"
+            name="reason"
+            type="text"
+            maxlength="255"
+            placeholder="Optional internal reason"
+          />
+        </li>
+      </ol>
+    </fieldset>
+
+    <fieldset class="actions">
+      <ol>
+        <li class="action input_action">
+          <input type="submit" value="Submit Refund" />
+        </li>
+        <li class="cancel">
+          <%= link_to "Cancel", admin_payment_path(@payment) %>
+        </li>
+      </ol>
+    </fieldset>
+  <% end %>
+</div>

@@ -8,6 +8,12 @@ class AdminUser < ApplicationRecord
 
   has_many :admin_login_link_tokens, dependent: :destroy
 
+  enum :role, {
+    fund_forge_admin: 0,
+    fund_forge_refunds: 1,
+    fund_forge_readonly: 2
+  }
+
   before_validation :normalize_email
 
   # Validations
@@ -24,7 +30,7 @@ class AdminUser < ApplicationRecord
   def self.ransackable_attributes(auth_object = nil)
     [
       "id", "email",
-      "first_name", "last_name", "contact_number",
+      "first_name", "last_name", "contact_number", "role",
       "created_at", "updated_at"
     ]
   end
@@ -45,6 +51,14 @@ class AdminUser < ApplicationRecord
     formatted.gsub!(";", " x") # (415) 555-2671 x123
 
     formatted
+  end
+
+  def full_access?
+    fund_forge_admin?
+  end
+
+  def can_refund_payments?
+    fund_forge_admin? || fund_forge_refunds?
   end
 
   private

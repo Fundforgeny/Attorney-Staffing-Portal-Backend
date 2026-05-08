@@ -7,6 +7,7 @@ class ApplicationController < ActionController::Base
 
   # Devise session-based auth for AdminUsers (For ActiveAdmin)
   before_action :authenticate_admin_user!, if: :active_admin_controller?
+  before_action :authorize_active_admin_role!, if: :active_admin_controller?
 
   # It wraps every Active Admin request in a block that temporarily disables `ActsAsTenant`.
   # Needed because Admin Users need to view or manage data across all locations (tenants) in the system, not just within a single one.
@@ -29,5 +30,14 @@ class ApplicationController < ActionController::Base
     ActsAsTenant.without_tenant do
       yield
     end
+  end
+
+  def authorize_active_admin_role!
+    return if current_admin_user.blank?
+    return if request.get? || request.head?
+    return if controller_path == "admin/payments" && action_name == "refund" && current_admin_user.can_refund_payments?
+    return if current_admin_user.full_access?
+
+    redirect_to admin_root_path, alert: "Your Fund Forge role is read-only for this action."
   end
 end

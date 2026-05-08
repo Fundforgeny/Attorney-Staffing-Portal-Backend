@@ -21,6 +21,7 @@ class Payment < ApplicationRecord
       id payment_type status payment_amount charge_id
       scheduled_at paid_at created_at updated_at
       total_payment_including_fee transaction_fee
+      refunded_amount refund_transaction_id refunded_at last_refund_reason
       user_id plan_id payment_method_id
       retry_count last_attempt_at next_retry_at decline_reason needs_new_card
       disputed disputed_at chargeflow_alert_id chargeflow_dispute_id chargeflow_recovery
@@ -35,6 +36,17 @@ class Payment < ApplicationRecord
   scope :retryable,           -> { where(needs_new_card: false).where("retry_count > 0").where(status: [ statuses[:pending], statuses[:processing] ]) }
   scope :due_for_retry,       -> { retryable.where("next_retry_at <= ?", Time.current.end_of_day) }
   scope :chargeflow_recovery, -> { where(chargeflow_recovery: true) }
+  scope :refunded,            -> { where("refunded_amount > 0") }
+
+  def refunded?
+    refunded_amount.to_d.positive?
+  end
+
+  def refundable_amount
+    charged_amount = total_payment_including_fee.presence || payment_amount.presence || 0
+    remaining = charged_amount.to_d - refunded_amount.to_d
+    remaining.positive? ? remaining : 0.to_d
+  end
 
   # ── Stop-retry logic ─────────────────────────────────────────────────────────
   #

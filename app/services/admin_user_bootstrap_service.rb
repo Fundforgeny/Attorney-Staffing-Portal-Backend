@@ -17,6 +17,7 @@ class AdminUserBootstrapService
       email: normalized_email,
       password: password,
       password_confirmation: password,
+      role: :fund_forge_admin,
       first_name: first_name.presence&.titleize || "Fund",
       last_name: last_name.presence&.titleize || "Forge",
       contact_number: ENV.fetch("ADMIN_BOOTSTRAP_CONTACT_NUMBER", DEFAULT_CONTACT_NUMBER)

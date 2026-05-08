@@ -1,6 +1,8 @@
 ActiveAdmin.register AdminUser do
+  menu if: proc { current_admin_user&.full_access? }
+
   permit_params :email, :first_name, :last_name, :contact_number,
-                :password, :password_confirmation
+                :password, :password_confirmation, :role
 
   filter :email
   filter :first_name
@@ -14,6 +16,7 @@ ActiveAdmin.register AdminUser do
     column :first_name
     column :last_name
     column :email
+    column :role
     column :contact_number
     column :created_at
     column :updated_at
@@ -31,6 +34,7 @@ ActiveAdmin.register AdminUser do
       row :first_name
       row :last_name
       row :email
+      row :role
       row :contact_number
       row :created_at
       row :updated_at
@@ -43,6 +47,7 @@ ActiveAdmin.register AdminUser do
       f.input :first_name
       f.input :last_name
       f.input :email
+      f.input :role, as: :select, collection: AdminUser.roles.keys.map { |key| [key.humanize, key] }
       f.input :contact_number
     end
     f.inputs "Set Password" do
@@ -95,5 +100,17 @@ ActiveAdmin.register AdminUser do
     link_to "Reset Password",
             reset_password_admin_admin_user_path(resource),
             class: "button"
+  end
+
+  controller do
+    before_action :require_full_access!
+
+    private
+
+    def require_full_access!
+      return if current_admin_user&.full_access?
+
+      redirect_to admin_root_path, alert: "Only Fund Forge admins can manage admin users."
+    end
   end
 end

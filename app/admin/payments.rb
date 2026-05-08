@@ -12,6 +12,7 @@ ActiveAdmin.register Payment do
   scope :pending
   scope :processing
   scope :failed
+  scope :refunded
   scope("Needs New Card") { |s| s.where(needs_new_card: true) }
   scope("Retrying")       { |s| s.where("retry_count > 0").where(status: [Payment.statuses[:pending], Payment.statuses[:processing]]).where(needs_new_card: false) }
 
@@ -38,8 +39,9 @@ ActiveAdmin.register Payment do
     column("Fee")    { |p| number_to_currency(p.transaction_fee || 0) }
     column("Total")  { |p| number_to_currency(p.total_payment_including_fee || 0) }
     column :status do |p|
-      status_tag p.status
+      p.refunded? ? status_tag("refunded", class: "warning") : status_tag(p.status)
     end
+    column("Refunded") { |p| p.refunded? ? number_to_currency(p.refunded_amount) : "—" }
     column("Retries") do |p|
       p.retry_count.to_i > 0 ? span(p.retry_count, class: "status_tag warning") : "—"
     end
@@ -72,9 +74,14 @@ ActiveAdmin.register Payment do
             row("Fee")     { number_to_currency(payment.transaction_fee || 0) }
             row("Total")   { number_to_currency(payment.total_payment_including_fee || 0) }
             row :status do
-              status_tag payment.status
+              payment.refunded? ? status_tag("refunded", class: "warning") : status_tag(payment.status)
             end
             row :charge_id
+            row("Refunded Amount") { payment.refunded? ? number_to_currency(payment.refunded_amount) : "—" }
+            row("Refundable Balance") { number_to_currency(payment.refundable_amount) }
+            row :refund_transaction_id
+            row :refunded_at
+            row :last_refund_reason
             row :scheduled_at
             row :paid_at
             row :created_at
@@ -157,5 +164,36 @@ ActiveAdmin.register Payment do
       f.input :needs_new_card
     end
     f.actions
+  end
+
+  action_item :refund, only: :show do
+    next unless current_admin_user&.can_refund_payments?
+    next unless resource.succeeded?
+    next unless resource.refundable_amount.positive?
+
+    link_to "Issue Refund", refund_admin_payment_path(resource), class: "button"
+  end
+
+  member_action :refund, method: [:get, :post] do
+    @payment = Payment.includes(:user, :plan, :payment_method).find(params[:id])
+
+    if request.post?
+      Admin::PaymentRefundService.new(
+        payment: @payment,
+        admin_user: current_admin_user,
+        amount: params[:amount],
+        reason: params[:reason]
+      ).call
+
+      redirect_to admin_payment_path(@payment), notice: "Refund submitted successfully."
+      next
+    end
+
+    @page_title = "Refund Payment ##{@payment.id}"
+    render "admin/payments/refund", layout: "active_admin"
+  rescue StandardError => e
+    flash.now[:error] = "Refund failed: #{e.message}"
+    @page_title = "Refund Payment ##{@payment.id}"
+    render "admin/payments/refund", layout: "active_admin"
   end
 end
