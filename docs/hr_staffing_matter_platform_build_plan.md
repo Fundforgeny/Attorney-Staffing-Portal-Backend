@@ -13,6 +13,8 @@ The meeting notes describe the current manual operating model: when a client pay
 
 The user has clarified that **the relevant GoHighLevel custom fields already exist**. Therefore, the build should not spend time recreating those fields. It should create a **field mapping registry** that records the existing Talent Hub field names and field IDs, maps them into canonical Titans attributes, and uses that map for syncing until the Titans app replaces GHL.
 
+The current connector assumption is that **Clio is already OAuth-connected**, the **Titans Law GHL credential already exists**, and the remaining credential to verify for implementation is the **Titans Law Talent Hub GHL private integration token**. A Talent Hub token was provided during planning, but raw credential values must never be committed to the repo, echoed in logs, or written into docs. The implementation should store that token only in the approved secret manager or runtime environment and reference it through a named secret/environment variable.
+
 ## Product Thesis
 
 Titans Law is not simply adding a recruiting portal. It is building a **matter-to-staffing operating system**. The core business event is not “candidate applied” or “matter opened”; it is **paid client requires attorney coverage**. Every module should serve that event. The platform should know what legal matter exists, where it belongs, what type of attorney is required, which attorneys are eligible, who was contacted, who expressed interest, who interviewed, who accepted, who was assigned, and whether the matter later needs restaffing.
@@ -77,6 +79,19 @@ The most important implementation principle is that Titans should store **canoni
 | `CaseAssignment` | Actual staffing decision and lifecycle. | case, attorney, role, assigned date, trial flag, workload count, replacement reason, ended date. |
 | `ExternalSyncRecord` | Connector-level idempotency and traceability. | local record type/id, provider, external ID, sync status, last payload hash, last error. |
 | `FieldMapping` | Existing GHL custom field mapping. | provider, location/sub-account, canonical attribute, external field ID/key, direction, transform, active flag. |
+
+## Connector Credentials and Secret Handling
+
+Connector work should begin from the assumption that Clio authorization and the Titans Law GHL credential are already available. The Talent Hub credential should be treated as a separate GHL sub-account credential because the meeting notes distinguish the Titans Law client sub-account from the Titans Law Talent Hub attorney/staffing sub-account.[1] Existing code already supports per-firm GHL credentials through `firms.ghl_api_key` and `firms.location_id`, with `FUND_FORGE_API_KEY` and `FUND_FORGE_LOCATION_ID` used as existing environment fallbacks in some workers.[2]
+
+| Connector | Current assumption | Required implementation handling |
+| --- | --- | --- |
+| Clio | Already OAuth-connected. | Do not build a new OAuth setup first; start by verifying the existing token storage, scopes, refresh behavior, and sandbox/test target. |
+| Titans Law GHL client sub-account | API credential already available. | Reuse the existing firm credential path or documented environment-variable path; do not duplicate credentials in code. |
+| Titans Law Talent Hub GHL sub-account | A private integration token was provided during planning. | Store only in the approved secret manager/runtime env, never in repo docs. Recommended canonical names are `TITANS_LAW_TALENT_HUB_GHL_API_KEY` and `TITANS_LAW_TALENT_HUB_LOCATION_ID`, unless the deployment docs define different names. |
+| Existing GHL custom fields | Already built. | Inventory existing field IDs/names and map them to canonical Titans attributes; do not recreate the fields. |
+
+If a future agent needs to set the Talent Hub token, the safe next step is to enter it directly into the approved production secret store or Render/Google Cloud runtime secret mechanism. If only the chat transcript contains the raw value, the agent should avoid copying it into shell commands, files, Git commits, or logs, and should ask for a secure secret-entry path instead.
 
 ## Existing GoHighLevel Custom Fields
 
@@ -179,10 +194,10 @@ The build should be phased so each release improves the current manual process w
 
 | Phase | Goal | Deliverables | Completion gate |
 | --- | --- | --- | --- |
-| 0 | Field and workflow inventory | Existing GHL custom field map, current Talent Hub stages, Clio custom fields, matter stage definitions, prompt templates, sample cases. | Approved field map stored without secrets. |
+| 0 | Field, workflow, and connector inventory | Existing GHL custom field map, current Talent Hub stages, Clio custom fields, matter stage definitions, prompt templates, sample cases, Clio OAuth verification, Titans Law GHL credential path, and Talent Hub GHL secret/env-var path. | Approved field map and connector map stored without raw secrets. |
 | 1 | Canonical case foundation | Harden `Case`, add `CaseIntake`, `RelatedParty`, `CaseTask`, `StaffingRequirement`, `ExternalSyncRecord`, attachments. | Tests cover model validations and idempotent record creation. |
 | 2 | AI intake packet | Intake upload, transcript storage, prompt-versioned AI extraction, reviewer UI/API, case summary/task generation. | Staff can review and approve a generated matter packet. |
-| 3 | Clio sync | OAuth/credential path, matter/contact/relationship/task/document sync, dry run, retry/error UI. | One test matter can be created idempotently in Clio sandbox or approved environment. |
+| 3 | Clio sync | Verify existing OAuth connection, scopes, refresh behavior, matter/contact/relationship/task/document sync, dry run, retry/error UI. | One test matter can be created idempotently in Clio sandbox or approved environment. |
 | 4 | Talent Hub sync | Existing GHL custom field mapping, contact/profile sync, stage sync, tag/workflow connector. | Resume/contact update writes correctly to existing GHL fields. |
 | 5 | Staffing dashboard | Case queue, match recommendations, outreach batch creation, attorney response tracking, restaffing queue. | Staff can launch internal outreach from a case without manually duplicating workflows. |
 | 6 | Resume parser | Bulk resume upload, structured extraction, review screen, contact create/update, attachment storage. | Staff can import Indeed resumes into Titans/GHL in minutes. |
@@ -200,7 +215,7 @@ The first sprint should produce the minimum useful automation without waiting fo
 | Backend | Add/clean canonical case models and attachments; add service skeletons for AI extraction, GHL sync, and Clio sync. |
 | AI | Store prompt versions; produce structured JSON for parties, jurisdiction, case description, tasks, and staffing requirements. |
 | Ops UI/API | Provide review endpoints/screens for generated matter packet and staffing requirement. |
-| Integration | Verify Clio API credential path and GHL v2/private integration approach without committing secrets. |
+| Integration | Verify existing Clio OAuth connection, existing Titans Law GHL credential path, and Talent Hub GHL private integration token storage via secret manager/runtime env without committing secrets. |
 | Validation | Model tests, service dry-run tests, one end-to-end local seed flow from paid plan to generated case packet. |
 
 ## Security, Ethics, and Legal Operations Boundaries
@@ -214,7 +229,8 @@ Hiring tools should be designed around job-relevant criteria. The system should 
 | Risk | Why it matters | Mitigation |
 | --- | --- | --- |
 | GHL field IDs/names are undocumented | Existing custom fields are built but must be mapped correctly. | Create a field mapping inventory before sync code. |
-| Clio/GHL secret handling | Credentials cannot be pasted or committed. | Use approved secret store and environment variables only.[5] |
+| Talent Hub secret handling | The Talent Hub token was provided during planning, but raw credential values cannot be committed, logged, or copied into docs. | Store the token only through the approved secret manager/runtime environment and reference it by env var, preferably `TITANS_LAW_TALENT_HUB_GHL_API_KEY`. |
+| Clio/GHL secret handling | Clio is assumed OAuth-connected and Titans Law GHL is assumed available, but connector code still must not expose credentials. | Use approved secret store and environment variables only.[5] |
 | Indeed partner access | API posting/applicant ingestion may require partner approval. | Build manual upload/parser first; keep API integration as Phase 2. |
 | Duplicate `attorneyprofiles` table | Schema anomaly may cause confusion or migration mistakes. | Investigate and clean with a migration plan before major attorney-profile work.[2] |
 | AI hallucination or wrong jurisdiction | Incorrect matter setup can create legal and operational risk. | Require human review for jurisdiction, parties, and staffing requirements. |
