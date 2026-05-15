@@ -19,15 +19,18 @@ The first implementation slice adds backend foundations for the canonical Titans
 | External sync tracking | Added `ExternalSyncRecord` for idempotent Clio/GHL/Indeed/Titans app sync tracking. |
 | Talent Hub connector config | Added `TalentHubGhlConfig`, which reads only the named environment variables and returns a `GhlService` instance when configured. |
 | Attorney resumes | Added an Active Storage `resume` attachment to `AttorneyProfile` for the later Indeed resume parser/import workflow. |
+| Admin cases API | Added authenticated read endpoints at `GET /api/v1/admin/cases` and `GET /api/v1/admin/cases/:id` for case queue and case detail visibility. |
+| Admin staffing requirements API | Added authenticated read endpoints at `GET /api/v1/admin/staffing_requirements` and `GET /api/v1/admin/staffing_requirements/:id` for staffing queue visibility. |
 
 ## Validation Notes
 
-The sandbox did not initially include Ruby. The available Ubuntu package installs Ruby 3.0.2, which is enough for syntax checks but not sufficient for the current Rails 8 / Bundler 2.6.9 application stack. The repository lockfile requires Bundler 2.6.9, which requires Ruby 3.1 or newer, and the Rails 8 app should be validated in the deployed or development environment with the project-approved Ruby version.
+The sandbox did not initially include a Rails-compatible Ruby runtime. Ruby 3.3.11 was installed with rbenv, Bundler 2.6.9 was installed to match the lockfile, and local PostgreSQL and Redis services were started so migrations and focused tests could run. The repository now includes `.ruby-version` with `3.3.11` to make the local validation runtime explicit for future agents.
 
 | Validation | Result |
 | --- | --- |
-| Ruby syntax checks on new/modified Ruby files | Passed with Ruby 3.0.2. |
-| Focused Rails tests | Blocked in sandbox because Bundler 2.6.9 cannot install/run on Ruby 3.0.2. |
+| Ruby syntax checks on new/modified Ruby files | Passed. |
+| Test database migration | Passed with Ruby 3.3.11, Bundler 2.6.9, local PostgreSQL, and local Redis. |
+| Focused Rails tests | Passed: `14 runs, 63 assertions, 0 failures, 0 errors, 0 skips`. |
 | Secret leakage check | Passed: the provided Talent Hub token prefix was not found in `README.md`, `docs`, `app`, `config`, `db`, or `test`. |
 
 ## Commands Run
@@ -46,12 +49,13 @@ ruby -c test/models/staffing_foundation_test.rb
 ruby -c test/services/talent_hub_ghl_config_test.rb
 ```
 
-The focused Rails test command to rerun in the proper Ruby environment is:
+The focused Rails test commands to rerun are:
 
 ```bash
 bin/rails test test/models/staffing_foundation_test.rb test/services/talent_hub_ghl_config_test.rb
+bin/rails test test/models/staffing_foundation_test.rb test/services/talent_hub_ghl_config_test.rb test/integration/admin_cases_and_staffing_requirements_test.rb
 ```
 
 ## Next Implementation Step
 
-The next safe slice should run the migration in a Ruby 3.2+ / Rails 8-compatible environment, verify schema loading, then add the first admin/API read endpoints for cases and staffing requirements. Do not implement live Talent Hub writes until `TITANS_LAW_TALENT_HUB_GHL_API_KEY` and `TITANS_LAW_TALENT_HUB_LOCATION_ID` are present in the approved runtime secret store.
+The next safe slice should add create/update workflows for case intake review and staffing requirements, then connect reviewed case packets to the Clio dry-run/sync service. Do not implement live Talent Hub writes until `TITANS_LAW_TALENT_HUB_GHL_API_KEY` and `TITANS_LAW_TALENT_HUB_LOCATION_ID` are present in the approved runtime secret store.

@@ -95,6 +95,10 @@ Rails.application.routes.draw do
         # Users
         resources :users, only: [:index, :show]
 
+        # Staffing / matter management
+        resources :cases, only: [:index, :show]
+        resources :staffing_requirements, only: [:index, :show]
+
         # Admin Users
         resources :admin_users, only: [:index, :create, :show, :update]
 

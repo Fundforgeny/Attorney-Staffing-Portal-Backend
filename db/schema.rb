@@ -10,7 +10,7 @@
 #
 # It's strongly recommended that you check this file into your version control system.
 
-ActiveRecord::Schema[8.0].define(version: 2026_01_27_104639) do
+ActiveRecord::Schema[8.0].define(version: 2026_05_15_223000) do
   # These are extensions that must be enabled in order to support this database
   enable_extension "pg_catalog.plpgsql"
 
@@ -42,6 +42,19 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_27_104639) do
     t.index ["blob_id", "variation_digest"], name: "index_active_storage_variant_records_uniqueness", unique: true
   end
 
+  create_table "admin_login_link_tokens", force: :cascade do |t|
+    t.bigint "admin_user_id", null: false
+    t.string "token_digest", null: false
+    t.datetime "expires_at", null: false
+    t.datetime "used_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["admin_user_id"], name: "index_admin_login_link_tokens_on_admin_user_id"
+    t.index ["expires_at"], name: "index_admin_login_link_tokens_on_expires_at"
+    t.index ["token_digest"], name: "index_admin_login_link_tokens_on_token_digest", unique: true
+    t.index ["used_at"], name: "index_admin_login_link_tokens_on_used_at"
+  end
+
   create_table "admin_users", force: :cascade do |t|
     t.string "email", default: "", null: false
     t.string "encrypted_password", default: "", null: false
@@ -53,8 +66,10 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_27_104639) do
     t.string "contact_number", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.integer "role", default: 0, null: false
     t.index ["email"], name: "index_admin_users_on_email", unique: true
     t.index ["reset_password_token"], name: "index_admin_users_on_reset_password_token", unique: true
+    t.index ["role"], name: "index_admin_users_on_role"
   end
 
   create_table "agreements", force: :cascade do |t|
@@ -106,6 +121,49 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_27_104639) do
     t.index ["user_id"], name: "index_attorneyprofiles_on_user_id"
   end
 
+  create_table "case_intakes", force: :cascade do |t|
+    t.bigint "case_id", null: false
+    t.string "source", default: "manual", null: false
+    t.string "ghl_contact_id"
+    t.string "ghl_opportunity_id"
+    t.string "review_status", default: "pending_review", null: false
+    t.decimal "confidence", precision: 5, scale: 4
+    t.text "transcript"
+    t.jsonb "raw_payload", default: {}, null: false
+    t.jsonb "ai_extraction", default: {}, null: false
+    t.bigint "reviewed_by_id"
+    t.datetime "reviewed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["case_id"], name: "index_case_intakes_on_case_id"
+    t.index ["ghl_contact_id"], name: "index_case_intakes_on_ghl_contact_id"
+    t.index ["ghl_opportunity_id"], name: "index_case_intakes_on_ghl_opportunity_id"
+    t.index ["review_status"], name: "index_case_intakes_on_review_status"
+    t.index ["reviewed_by_id"], name: "index_case_intakes_on_reviewed_by_id"
+    t.index ["source"], name: "index_case_intakes_on_source"
+  end
+
+  create_table "case_tasks", force: :cascade do |t|
+    t.bigint "case_id", null: false
+    t.string "title", null: false
+    t.text "description"
+    t.string "priority", default: "normal", null: false
+    t.string "status", default: "open", null: false
+    t.string "source", default: "manual", null: false
+    t.datetime "due_at"
+    t.bigint "owner_id"
+    t.string "clio_task_id"
+    t.jsonb "custom_data", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["case_id"], name: "index_case_tasks_on_case_id"
+    t.index ["clio_task_id"], name: "index_case_tasks_on_clio_task_id"
+    t.index ["owner_id"], name: "index_case_tasks_on_owner_id"
+    t.index ["priority"], name: "index_case_tasks_on_priority"
+    t.index ["source"], name: "index_case_tasks_on_source"
+    t.index ["status"], name: "index_case_tasks_on_status"
+  end
+
   create_table "cases", force: :cascade do |t|
     t.bigint "firm_id", null: false
     t.string "title", null: false
@@ -124,8 +182,18 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_27_104639) do
     t.jsonb "custom_data", default: {}
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
+    t.bigint "client_user_id"
+    t.date "open_date"
+    t.string "county"
+    t.string "zip_code"
+    t.decimal "retainer_amount", precision: 15, scale: 2
+    t.decimal "budget_amount", precision: 15, scale: 2
+    t.string "staffing_status", default: "not_started", null: false
+    t.index ["client_user_id"], name: "index_cases_on_client_user_id"
+    t.index ["clio_matter_id"], name: "index_cases_on_clio_matter_id", unique: true, where: "(clio_matter_id IS NOT NULL)"
     t.index ["created_by_id"], name: "index_cases_on_created_by_id"
     t.index ["firm_id"], name: "index_cases_on_firm_id"
+    t.index ["staffing_status"], name: "index_cases_on_staffing_status"
     t.index ["status"], name: "index_cases_on_status"
     t.index ["user_id"], name: "index_cases_on_user_id"
   end
@@ -145,6 +213,41 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_27_104639) do
     t.datetime "updated_at", null: false
     t.index ["firm_id"], name: "index_client_profiles_on_firm_id"
     t.index ["user_id"], name: "index_client_profiles_on_user_id"
+  end
+
+  create_table "external_sync_records", force: :cascade do |t|
+    t.string "provider", null: false
+    t.string "syncable_type", null: false
+    t.bigint "syncable_id", null: false
+    t.string "external_id", null: false
+    t.string "external_object_type", null: false
+    t.string "status", default: "pending", null: false
+    t.string "last_payload_hash"
+    t.text "last_error"
+    t.datetime "last_synced_at"
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["provider", "external_object_type", "external_id"], name: "index_external_sync_records_on_provider_external_object", unique: true
+    t.index ["status"], name: "index_external_sync_records_on_status"
+    t.index ["syncable_type", "syncable_id"], name: "index_external_sync_records_on_syncable"
+  end
+
+  create_table "field_mappings", force: :cascade do |t|
+    t.string "provider", null: false
+    t.string "location_id"
+    t.string "canonical_attribute", null: false
+    t.string "external_field_id", null: false
+    t.string "external_field_name"
+    t.string "direction", default: "bidirectional", null: false
+    t.string "transform"
+    t.boolean "active", default: true, null: false
+    t.jsonb "metadata", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["active"], name: "index_field_mappings_on_active"
+    t.index ["provider", "location_id", "canonical_attribute"], name: "index_field_mappings_on_provider_location_attribute"
+    t.index ["provider", "location_id", "external_field_id"], name: "index_field_mappings_on_provider_location_external_id", unique: true
   end
 
   create_table "firm_users", force: :cascade do |t|
@@ -172,12 +275,70 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_27_104639) do
     t.string "ghl_api_key"
   end
 
+  create_table "grace_week_requests", force: :cascade do |t|
+    t.bigint "plan_id", null: false
+    t.bigint "user_id", null: false
+    t.bigint "payment_id", null: false
+    t.integer "status", default: 0, null: false
+    t.text "reason"
+    t.text "admin_note"
+    t.decimal "half_amount", precision: 10, scale: 2
+    t.date "first_half_due"
+    t.date "second_half_due"
+    t.integer "halves_paid", default: 0
+    t.datetime "approved_at"
+    t.datetime "denied_at"
+    t.datetime "requested_at", null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["payment_id"], name: "index_grace_week_requests_on_payment_id"
+    t.index ["plan_id", "status"], name: "index_grace_week_requests_on_plan_id_and_status"
+    t.index ["plan_id"], name: "index_grace_week_requests_on_plan_id"
+    t.index ["status"], name: "index_grace_week_requests_on_status"
+    t.index ["user_id"], name: "index_grace_week_requests_on_user_id"
+  end
+
   create_table "jwt_denylists", force: :cascade do |t|
     t.string "jti", null: false
     t.datetime "exp", null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.index ["jti"], name: "index_jwt_denylists_on_jti"
+  end
+
+  create_table "login_link_tokens", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.string "token_digest", null: false
+    t.datetime "expires_at", null: false
+    t.datetime "used_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["expires_at"], name: "index_login_link_tokens_on_expires_at"
+    t.index ["token_digest"], name: "index_login_link_tokens_on_token_digest", unique: true
+    t.index ["used_at"], name: "index_login_link_tokens_on_used_at"
+    t.index ["user_id"], name: "index_login_link_tokens_on_user_id"
+  end
+
+  create_table "payment_3ds_sessions", force: :cascade do |t|
+    t.bigint "user_id", null: false
+    t.bigint "plan_id", null: false
+    t.bigint "payment_id", null: false
+    t.bigint "payment_method_id", null: false
+    t.string "status", default: "pending", null: false
+    t.string "callback_token", null: false
+    t.string "spreedly_transaction_token"
+    t.string "challenge_url"
+    t.jsonb "raw_response", default: {}, null: false
+    t.datetime "completed_at"
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["callback_token"], name: "index_payment_3ds_sessions_on_callback_token", unique: true
+    t.index ["payment_id"], name: "index_payment_3ds_sessions_on_payment_id"
+    t.index ["payment_method_id"], name: "index_payment_3ds_sessions_on_payment_method_id"
+    t.index ["plan_id"], name: "index_payment_3ds_sessions_on_plan_id"
+    t.index ["spreedly_transaction_token"], name: "index_payment_3ds_sessions_on_spreedly_transaction_token", unique: true
+    t.index ["status"], name: "index_payment_3ds_sessions_on_status"
+    t.index ["user_id"], name: "index_payment_3ds_sessions_on_user_id"
   end
 
   create_table "payment_methods", force: :cascade do |t|
@@ -194,7 +355,16 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_27_104639) do
     t.datetime "updated_at", null: false
     t.string "card_number"
     t.string "card_cvc"
+    t.boolean "is_default", default: false, null: false
+    t.datetime "spreedly_redacted_at"
+    t.datetime "last_updated_via_spreedly_at"
+    t.datetime "account_updater_checked_at"
+    t.datetime "account_updater_updated_at"
+    t.datetime "archived_at"
+    t.index ["archived_at"], name: "index_payment_methods_on_archived_at"
     t.index ["stripe_payment_method_id"], name: "index_payment_methods_on_stripe_payment_method_id", unique: true
+    t.index ["user_id", "is_default"], name: "index_payment_methods_on_user_default", where: "(is_default = true)"
+    t.index ["user_id", "vault_token"], name: "idx_payment_methods_user_vault_token", where: "(vault_token IS NOT NULL)"
     t.index ["user_id"], name: "index_payment_methods_on_user_id"
   end
 
@@ -212,8 +382,32 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_27_104639) do
     t.datetime "updated_at", null: false
     t.decimal "total_payment_including_fee"
     t.decimal "transaction_fee"
+    t.integer "retry_count", default: 0, null: false
+    t.datetime "last_attempt_at"
+    t.datetime "next_retry_at"
+    t.string "decline_reason"
+    t.boolean "needs_new_card", default: false, null: false
+    t.bigint "grace_week_request_id"
+    t.boolean "disputed", default: false, null: false
+    t.string "chargeflow_alert_id"
+    t.string "chargeflow_dispute_id"
+    t.datetime "disputed_at"
+    t.boolean "chargeflow_recovery", default: false, null: false
+    t.string "processor_transaction_id"
+    t.decimal "refunded_amount", precision: 10, scale: 2, default: "0.0", null: false
+    t.string "refund_transaction_id"
+    t.datetime "refunded_at"
+    t.string "last_refund_reason"
+    t.index ["chargeflow_alert_id"], name: "index_payments_on_chargeflow_alert_id"
+    t.index ["chargeflow_dispute_id"], name: "index_payments_on_chargeflow_dispute_id"
+    t.index ["chargeflow_recovery"], name: "index_payments_on_chargeflow_recovery"
+    t.index ["disputed"], name: "index_payments_on_disputed"
+    t.index ["grace_week_request_id"], name: "index_payments_on_grace_week_request_id"
+    t.index ["needs_new_card"], name: "index_payments_on_needs_new_card"
+    t.index ["next_retry_at"], name: "index_payments_on_next_retry_at"
     t.index ["payment_method_id"], name: "index_payments_on_payment_method_id"
     t.index ["plan_id"], name: "index_payments_on_plan_id"
+    t.index ["processor_transaction_id"], name: "index_payments_on_processor_transaction_id"
     t.index ["user_id"], name: "index_payments_on_user_id"
   end
 
@@ -225,12 +419,57 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_27_104639) do
     t.decimal "monthly_payment", precision: 10, scale: 2, null: false
     t.decimal "monthly_interest_amount", precision: 10, scale: 2
     t.decimal "down_payment", precision: 10, scale: 2, null: false
-    t.integer "status", default: 0
+    t.integer "status", default: 0, null: false
     t.datetime "created_at", null: false
     t.datetime "updated_at", null: false
     t.bigint "user_id", null: false
     t.string "magic_link_token"
+    t.string "checkout_session_id", null: false
+    t.datetime "next_payment_at"
+    t.decimal "chargeflow_alert_fee", precision: 10, scale: 2, default: "0.0", null: false
+    t.index ["checkout_session_id"], name: "index_plans_on_checkout_session_id", unique: true
+    t.index ["status"], name: "index_plans_on_status"
     t.index ["user_id"], name: "index_plans_on_user_id"
+  end
+
+  create_table "related_parties", force: :cascade do |t|
+    t.bigint "case_id", null: false
+    t.string "name", null: false
+    t.string "role", default: "unknown", null: false
+    t.string "email"
+    t.string "phone"
+    t.string "represented_status"
+    t.string "counsel_name"
+    t.string "counsel_email"
+    t.string "counsel_phone"
+    t.string "clio_contact_id"
+    t.jsonb "custom_data", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["case_id"], name: "index_related_parties_on_case_id"
+    t.index ["clio_contact_id"], name: "index_related_parties_on_clio_contact_id"
+    t.index ["role"], name: "index_related_parties_on_role"
+  end
+
+  create_table "staffing_requirements", force: :cascade do |t|
+    t.bigint "case_id", null: false
+    t.string "status", default: "draft", null: false
+    t.string "urgency", default: "standard", null: false
+    t.string "required_license_states", default: [], null: false, array: true
+    t.string "federal_court_admissions", default: [], null: false, array: true
+    t.jsonb "practice_areas", default: [], null: false
+    t.string "county"
+    t.string "zip_code"
+    t.boolean "residency_required", default: true, null: false
+    t.integer "target_interview_count", default: 5, null: false
+    t.jsonb "custom_data", default: {}, null: false
+    t.datetime "created_at", null: false
+    t.datetime "updated_at", null: false
+    t.index ["case_id"], name: "index_staffing_requirements_on_case_id"
+    t.index ["federal_court_admissions"], name: "index_staffing_requirements_on_federal_court_admissions", using: :gin
+    t.index ["required_license_states"], name: "index_staffing_requirements_on_required_license_states", using: :gin
+    t.index ["status"], name: "index_staffing_requirements_on_status"
+    t.index ["urgency"], name: "index_staffing_requirements_on_urgency"
   end
 
   create_table "users", force: :cascade do |t|
@@ -266,27 +505,45 @@ ActiveRecord::Schema[8.0].define(version: 2026_01_27_104639) do
     t.string "stripe_verification_session_id"
     t.bigint "firm_id"
     t.string "stripe_customer_id"
+    t.datetime "created_at", default: -> { "now()" }, null: false
+    t.datetime "updated_at", default: -> { "now()" }, null: false
     t.index ["firm_id"], name: "index_users_on_firm_id"
     t.index ["user_type"], name: "index_users_on_user_type"
   end
 
   add_foreign_key "active_storage_attachments", "active_storage_blobs", column: "blob_id"
   add_foreign_key "active_storage_variant_records", "active_storage_blobs", column: "blob_id"
+  add_foreign_key "admin_login_link_tokens", "admin_users"
   add_foreign_key "agreements", "plans"
   add_foreign_key "agreements", "users"
   add_foreign_key "attorney_profiles", "firms"
   add_foreign_key "attorney_profiles", "users"
+  add_foreign_key "case_intakes", "cases"
+  add_foreign_key "case_intakes", "users", column: "reviewed_by_id"
+  add_foreign_key "case_tasks", "cases"
+  add_foreign_key "case_tasks", "users", column: "owner_id"
   add_foreign_key "cases", "firms"
   add_foreign_key "cases", "users"
+  add_foreign_key "cases", "users", column: "client_user_id"
   add_foreign_key "cases", "users", column: "created_by_id"
   add_foreign_key "client_profiles", "firms"
   add_foreign_key "client_profiles", "users"
   add_foreign_key "firm_users", "firms"
   add_foreign_key "firm_users", "users"
+  add_foreign_key "grace_week_requests", "payments"
+  add_foreign_key "grace_week_requests", "plans"
+  add_foreign_key "grace_week_requests", "users"
+  add_foreign_key "login_link_tokens", "users"
+  add_foreign_key "payment_3ds_sessions", "payment_methods"
+  add_foreign_key "payment_3ds_sessions", "payments"
+  add_foreign_key "payment_3ds_sessions", "plans"
+  add_foreign_key "payment_3ds_sessions", "users"
   add_foreign_key "payment_methods", "users", on_delete: :cascade
   add_foreign_key "payments", "payment_methods"
   add_foreign_key "payments", "plans"
   add_foreign_key "payments", "users"
   add_foreign_key "plans", "users"
+  add_foreign_key "related_parties", "cases"
+  add_foreign_key "staffing_requirements", "cases"
   add_foreign_key "users", "firms"
 end
