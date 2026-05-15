@@ -15,6 +15,9 @@ See `docs/admin_auth.md` for the current passwordless admin login flow and
 the environment settings required for admin magic links.
 See `docs/render_deployment.md` for the backend deployment authority. The
 backend deploy target is Render, not AWS ECS.
+See `docs/hr_staffing_matter_platform_build_plan.md` for the planned Titans Law
+HR staffing, Clio matter-opening, Talent Hub, Indeed intake, and future Titans
+app migration architecture.
 
 * Database creation
 
