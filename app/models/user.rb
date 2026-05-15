@@ -19,6 +19,11 @@ class User < ApplicationRecord
   has_many :plans, dependent: :destroy
   has_many :agreements, dependent: :destroy
   has_many :login_link_tokens, dependent: :destroy
+  has_many :created_cases, class_name: "Case", foreign_key: :created_by_id, dependent: :restrict_with_exception
+  has_many :client_cases, class_name: "Case", foreign_key: :client_user_id, dependent: :nullify
+  has_many :assigned_cases, class_name: "Case", foreign_key: :user_id, dependent: :nullify
+  has_many :owned_case_tasks, class_name: "CaseTask", foreign_key: :owner_id, dependent: :nullify
+  has_many :reviewed_case_intakes, class_name: "CaseIntake", foreign_key: :reviewed_by_id, dependent: :nullify
 
   # Callbacks
   after_commit :sync_with_ghl_accounts, on: :create
@@ -34,7 +39,7 @@ class User < ApplicationRecord
 
   # Define which associations are searchable by Ransack
   def self.ransackable_associations(auth_object = nil)
-    ["attorney_profile", "client_profile", "firm_users", "firm", "firms", "payment_method", "payment_methods", "plans", "agreements"]
+    ["agreements", "assigned_cases", "attorney_profile", "client_cases", "client_profile", "created_cases", "firm_users", "firm", "firms", "owned_case_tasks", "payment_method", "payment_methods", "plans", "reviewed_case_intakes"]
   end
 
   # Custom ransacker for firms association

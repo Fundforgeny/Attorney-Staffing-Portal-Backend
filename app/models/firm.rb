@@ -3,6 +3,7 @@ class Firm < ApplicationRecord
   has_many :users, through: :firm_users
   has_many :attorney_profiles, dependent: :destroy
   has_many :client_profiles, dependent: :destroy
+  has_many :cases, dependent: :restrict_with_exception
   has_one_attached :logo
 
   # Define which attributes are searchable by Ransack

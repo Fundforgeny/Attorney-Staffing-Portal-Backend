@@ -18,6 +18,9 @@ backend deploy target is Render, not AWS ECS.
 See `docs/hr_staffing_matter_platform_build_plan.md` for the planned Titans Law
 HR staffing, Clio matter-opening, Talent Hub, Indeed intake, and future Titans
 app migration architecture.
+See `docs/hr_staffing_matter_platform_implementation_notes.md` for the current
+implementation status, validation commands, and staffing-platform follow-up
+notes.
 
 * Database creation
 
