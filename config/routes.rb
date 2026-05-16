@@ -45,6 +45,10 @@ Rails.application.routes.draw do
         resource :login_link, only: [ :create, :show ], controller: "login_links"
       end
 
+      namespace :workflows do
+        resources :client_case_intakes, only: [:create]
+      end
+
       post 'payments/create_user_plan', to: 'payments#create_user_plan'
       get 'payments/iframe_security', to: 'payments#iframe_security'
       post 'magic_links/create_user_with_magic_link', to: 'magic_links#create_user_with_magic_link'

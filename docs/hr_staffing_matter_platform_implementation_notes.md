@@ -59,3 +59,69 @@ bin/rails test test/models/staffing_foundation_test.rb test/services/talent_hub_
 ## Next Implementation Step
 
 The next safe slice should add create/update workflows for case intake review and staffing requirements, then connect reviewed case packets to the Clio dry-run/sync service. Do not implement live Talent Hub writes until `TITANS_LAW_TALENT_HUB_GHL_API_KEY` and `TITANS_LAW_TALENT_HUB_LOCATION_ID` are present in the approved runtime secret store.
+
+## Build 1: Client Workflow API Trigger
+
+Build 1 now supports an inbound API call from the Titans Law client workflow when a contact changes into the **customer** contact type. This endpoint is designed for the workflow located at Titans Law location `7b7kaqszIjsgIIPyjBUB`, workflow `69273f4c-6f78-4fc4-9953-621497e018b6`. The browser session could not open the workflow page in this run because no browser window was available, so the implementation is based on the user-provided workflow URL and the stated trigger rule.
+
+| Item | Implementation detail |
+| --- | --- |
+| Endpoint | `POST /api/v1/workflows/client_case_intakes` |
+| Auth | Send `X-Titans-Workflow-Token: <runtime secret>` or `Authorization: Bearer <runtime secret>`. The backend reads the expected token from `TITANS_CLIENT_WORKFLOW_API_TOKEN`. |
+| Trigger | Intended to run when the client workflow detects a customer contact type change. Supported contact types remain `lead`, `consult booked`, and `customer`; a paid contact should move to `customer`. |
+| Idempotency | Prefer sending `external_event_id`. If unavailable, the service derives an event ID from `workflow_id`, `ghl_contact_id`, and the new contact type. |
+| Canonical records created/updated | `User`, `Firm`, `Case`, `CaseIntake`, `StaffingRequirement`, `RelatedParty`, `CaseTask`, and `ExternalSyncRecord`. |
+| Ads reporting API data | Include ads reporting/attribution data under `ads_attribution`, `ad_attribution`, `ads_reporting`, or `utm`; the payload is stored in `cases.custom_data` and `staffing_requirements.custom_data` for later reporting. |
+
+Example workflow payload shape:
+
+```json
+{
+  "workflow_id": "69273f4c-6f78-4fc4-9953-621497e018b6",
+  "workflow_name": "Client Paid - Open Matter",
+  "location_id": "7b7kaqszIjsgIIPyjBUB",
+  "ghl_contact_id": "{{contact.id}}",
+  "ghl_opportunity_id": "{{opportunity.id}}",
+  "trigger": { "type": "contact_type_change", "field": "contact_type" },
+  "contact_type_change": {
+    "previous_contact_type": "lead",
+    "new_contact_type": "customer"
+  },
+  "client": {
+    "email": "{{contact.email}}",
+    "first_name": "{{contact.first_name}}",
+    "last_name": "{{contact.last_name}}",
+    "phone": "{{contact.phone}}"
+  },
+  "case": {
+    "title": "{{contact.full_name}} Matter",
+    "description": "{{custom.case_text}}",
+    "jurisdiction": "{{custom.jurisdiction}}",
+    "county": "{{custom.county}}",
+    "zip_code": "{{contact.postal_code}}",
+    "practice_areas": ["{{custom.practice_area}}"],
+    "retainer_amount": "{{custom.retainer_amount}}",
+    "budget_amount": "{{custom.budget_amount}}"
+  },
+  "intake": {
+    "transcript": "{{custom.call_transcript}}",
+    "ai_extraction": {}
+  },
+  "staffing_requirement": {
+    "status": "ready",
+    "urgency": "urgent",
+    "required_license_states": ["{{custom.jurisdiction}}"],
+    "practice_areas": ["{{custom.practice_area}}"],
+    "target_interview_count": 5
+  },
+  "ads_attribution": {
+    "source": "{{attribution.source}}",
+    "campaign_id": "{{attribution.campaign_id}}",
+    "ad_group_id": "{{attribution.ad_group_id}}",
+    "ad_id": "{{attribution.ad_id}}",
+    "gclid": "{{contact.gclid}}"
+  }
+}
+```
+
+The next build should connect this created `CaseIntake` to the AI extraction/review and Clio dry-run/sync workflow. Live outbound GHL/Talent Hub writes should remain blocked until the Talent Hub API key, Talent Hub location ID, and existing custom field mapping inventory are confirmed in the approved runtime secret store and `FieldMapping` records.

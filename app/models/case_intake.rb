@@ -1,6 +1,6 @@
 class CaseIntake < ApplicationRecord
   REVIEW_STATUSES = %w[pending_review approved rejected needs_more_information].freeze
-  SOURCES = %w[manual ghl clio indeed titans_app].freeze
+  SOURCES = %w[manual ghl ghl_client_workflow ghl_contact_type_change clio indeed titans_app].freeze
 
   belongs_to :case
   belongs_to :reviewed_by, class_name: "User", optional: true
