@@ -158,3 +158,18 @@ The connector layer now has a safe foundation for **Clio matter sync previews** 
 The next connector step is to verify the exact Clio field/custom-field payloads in a sandbox or approved live test matter, then replace the live-write gate in `ClioMatterSyncService#sync!` with idempotent API calls and `ExternalSyncRecord` updates. GHL outbound writes should use `GhlAgencyConfig.ghl_service_for_firm(firm)` when a `Firm` row owns the sub-account, `GhlAgencyConfig.ghl_service(location_id: explicit_location_id)` when the caller already knows the sub-account, and `TalentHubGhlConfig.ghl_service` for Talent Hub operations.
 
 A GHL agency key was pasted into chat during implementation. Treat that value as exposed: do not copy it into shell commands, files, Git history, logs, or docs. Rotate it and enter the replacement value directly into the approved runtime secret store as `GHL_AGENCY_API_KEY`.
+
+## Live Recent-Customer Run Blocker
+
+A live run was requested to pull recent contacts from the Titans Law sub-account whose contact type recently became `customer` and run them through the workflow intake path. The backend runtime was checked without printing secret values. The Titans Law `Firm` row exists and has a `location_id`, but `GHL_AGENCY_API_KEY` is not present in the Rails runtime environment, and no GHL connector secret was available through the local connector configuration search.
+
+| Check | Result |
+| --- | --- |
+| `GHL_AGENCY_API_KEY` runtime env | Missing. |
+| `TITANS_LAW_GHL_LOCATION_ID` runtime env | Missing. |
+| Titans Law `Firm` row | Present. |
+| Titans Law `Firm.location_id` | Present. |
+| Talent Hub location ID | Documented as `2ywU2OOzPzJIenESVkxz`. |
+| Safe run status | Blocked until a rotated agency key is entered directly into the approved secret store as `GHL_AGENCY_API_KEY`. |
+
+The agency key pasted in chat must be treated as exposed and should not be used for live pulls. Rotate it, enter the replacement directly into the approved runtime secret store, and then rerun the recent-customer pull using `GhlAgencyConfig.ghl_service_for_firm(titans_law_firm)`.
