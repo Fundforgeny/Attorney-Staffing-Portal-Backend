@@ -150,7 +150,7 @@ The connector layer now has a safe foundation for **Clio matter sync previews** 
 | Area | Implementation detail |
 | --- | --- |
 | Agency GHL key | `GhlAgencyConfig` reads one agency credential from `GHL_AGENCY_API_KEY`. There is no default location assumption because each firm/sub-account has its own GHL `location_id`; connector calls must pass `firm.location_id` or another explicit location ID. Optional `TITANS_LAW_GHL_LOCATION_ID` may identify the Titans Law client sub-account for workflows that are not tied to a `Firm` row. |
-| Talent Hub fallback | `TalentHubGhlConfig` still requires `TITANS_LAW_TALENT_HUB_LOCATION_ID`, but it can now use `GHL_AGENCY_API_KEY` when a separate `TITANS_LAW_TALENT_HUB_GHL_API_KEY` is not present. This keeps the Talent Hub location separate while centralizing credentials. |
+| Talent Hub fallback | `TalentHubGhlConfig` still requires `TITANS_LAW_TALENT_HUB_LOCATION_ID`; the Talent Hub location ID is `2ywU2OOzPzJIenESVkxz`. It can use `GHL_AGENCY_API_KEY` when a separate `TITANS_LAW_TALENT_HUB_GHL_API_KEY` is not present. This keeps the Talent Hub location separate while centralizing credentials. |
 | Clio runtime token | `ClioConfig` reads `CLIO_ACCESS_TOKEN` and optional `CLIO_API_BASE_URL`, defaulting to `https://app.clio.com/api/v4`. Raw Clio tokens must stay in the approved runtime secret store, never in repo files. |
 | Clio dry-run service | `ClioMatterSyncService#dry_run` builds deterministic operations for client contact, matter, note, related contacts, and tasks from canonical `Case`, `CaseIntake`, `RelatedParty`, and `CaseTask` records. |
 | Admin preview endpoint | `POST /api/v1/admin/cases/:id/clio_sync_preview` returns the Clio operation packet for review. It does not write to Clio. |
