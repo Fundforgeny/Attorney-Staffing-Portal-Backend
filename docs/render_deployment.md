@@ -1,53 +1,7 @@
-# Render deployment notes
+# Deprecated Render Deployment Notes
 
-## Current Render resources
+This document is retained only for historical context. The backend deployment authority has moved to **Google Cloud Run**. Do not use Render as the deployment target for current Attorney Staffing Portal / Fund Forge backend work.
 
-- Web service URL: `https://attorney-staffing-portal-backend-1.onrender.com`
-- Web service ID: `srv-d5b88h63jp1c73d3fu60`
-- Postgres database ID: `dpg-d5b5bmf5r7bs73a5p990-a`
+See [`docs/google_cloud_deployment.md`](google_cloud_deployment.md) for the current deployment service, region, runtime configuration, Secret Manager requirements, and validation checklist.
 
-## Deployment authority
-
-- Backend deploy target: Render web service `srv-d5b88h63jp1c73d3fu60`
-- Backend should not deploy through AWS ECS
-- GitHub Actions should trigger Render deploys with `RENDER_API_KEY`
-- If Render GitHub auto-deploy is enabled directly in Render, that is acceptable; AWS deploy automation is not
-
-## App/database wiring
-
-The Rails app reads `DATABASE_URL` in staging and production, so the Render web service should have the database wired through that environment variable.
-
-Recommended setup:
-
-- Set the Render web service `DATABASE_URL` to the **internal** Render Postgres connection string.
-- Use the **external** Render Postgres connection string only for local tools like `psql`, pgAdmin, TablePlus, or DBeaver.
-
-## Render dashboard steps
-
-1. Open the Render web service with ID `srv-d5b88h63jp1c73d3fu60`.
-2. Open **Environment**.
-3. Verify `DATABASE_URL` is present and points to the internal Postgres URL.
-4. Trigger a redeploy after any environment changes.
-
-## Render API examples
-
-Inspect the web service:
-
-```bash
-curl -s https://api.render.com/v1/services/srv-d5b88h63jp1c73d3fu60 \
-  -H "Accept: application/json" \
-  -H "Authorization: Bearer $RENDER_API_KEY"
-```
-
-List services:
-
-```bash
-curl -s https://api.render.com/v1/services \
-  -H "Accept: application/json" \
-  -H "Authorization: Bearer $RENDER_API_KEY"
-```
-
-## Security notes
-
-- Do not store live API keys, database passwords, or PATs in the repository.
-- If credentials were pasted into chat or shared in plaintext, rotate them.
+Older references to Render web service `srv-d5b88h63jp1c73d3fu60`, Render Postgres, or `RENDER_API_KEY` should be treated as stale unless a future committed deployment document explicitly restores Render as an approved target.
