@@ -125,3 +125,20 @@ Example workflow payload shape:
 ```
 
 The next build should connect this created `CaseIntake` to the AI extraction/review and Clio dry-run/sync workflow. Live outbound GHL/Talent Hub writes should remain blocked until the Talent Hub API key, Talent Hub location ID, and existing custom field mapping inventory are confirmed in the approved runtime secret store and `FieldMapping` records.
+
+## Local Workflow Run Result
+
+The Build 1 endpoint was run locally with a safe customer contact type change payload. Development Active Storage now defaults to local disk storage through `config.active_storage.service = ENV.fetch("ACTIVE_STORAGE_SERVICE", "local").to_sym`, so local workflow execution no longer requires legacy AWS credentials. If a future environment intentionally needs S3, it can set `ACTIVE_STORAGE_SERVICE=amazon` and provide the required AWS variables; otherwise AWS should not block the staffing/matter workflow path.
+
+| Check | Result |
+| --- | --- |
+| Endpoint called | `POST /api/v1/workflows/client_case_intakes` |
+| Trigger simulated | Customer contact type change from `lead` to `customer` for workflow `69273f4c-6f78-4fc4-9953-621497e018b6`. |
+| First run | Returned `201 Created` with message `Case intake created.` |
+| Replay/idempotency run | Returned `200 OK` with message `Case intake updated.` |
+| Canonical case | Created case `Workflow Local Test Matter` with jurisdiction `SC`, county `Richland`, budget `5000`, and retainer `5000`. |
+| Intake/staffing records | Created one `CaseIntake`, one `StaffingRequirement`, one `RelatedParty`, one `CaseTask`, and one `ExternalSyncRecord`. |
+| Ads attribution | Persisted `ads_attribution.source = google` in canonical case custom data. |
+| Contact type | Persisted `contact_type_change.new_contact_type = customer` in canonical case custom data. |
+
+The local payload file used for this sandbox run was temporary (`tmp_client_workflow_payload.json`) and should not be committed. Future live runs should call the same endpoint from the Titans Law workflow using the runtime secret `TITANS_CLIENT_WORKFLOW_API_TOKEN` and real workflow merge fields.
