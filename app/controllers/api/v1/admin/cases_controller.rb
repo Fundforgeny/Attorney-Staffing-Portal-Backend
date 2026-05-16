@@ -1,5 +1,5 @@
 class Api::V1::Admin::CasesController < Api::V1::Admin::BaseController
-  before_action :set_case, only: [:show]
+  before_action :set_case, only: [:show, :clio_sync_preview]
 
   # GET /api/v1/admin/cases
   def index
@@ -22,6 +22,20 @@ class Api::V1::Admin::CasesController < Api::V1::Admin::BaseController
   # GET /api/v1/admin/cases/:id
   def show
     render_success(data: case_detail(@case))
+  end
+
+  # POST /api/v1/admin/cases/:id/clio_sync_preview
+  def clio_sync_preview
+    result = ClioMatterSyncService.new(@case).dry_run
+
+    render_success(
+      data: {
+        case_id: result.case_record.id,
+        dry_run: result.dry_run,
+        ready_for_live_sync: result.ready_for_live_sync,
+        operations: result.operations
+      }
+    )
   end
 
   private

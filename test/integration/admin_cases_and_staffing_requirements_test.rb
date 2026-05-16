@@ -72,6 +72,20 @@ class AdminCasesAndStaffingRequirementsTest < ActionDispatch::IntegrationTest
     assert_equal 1, data.fetch("staffing_requirements").length
   end
 
+  test "admin can preview Clio sync packet for a case" do
+    RelatedParty.create!(case: @case, name: "Opposing Party", role: "opposing_party")
+    CaseTask.create!(case: @case, title: "Review intake packet", source: "ai", priority: "high")
+
+    post "/api/v1/admin/cases/#{@case.id}/clio_sync_preview", headers: auth_headers
+
+    assert_response :success
+    data = JSON.parse(response.body).fetch("data")
+    assert_equal @case.id, data.fetch("case_id")
+    assert_equal true, data.fetch("dry_run")
+    assert data.fetch("operations").any? { |operation| operation.fetch("action") == "create_note" }
+    assert data.fetch("operations").any? { |operation| operation.fetch("action") == "find_or_create_related_contact" }
+  end
+
   test "admin can list staffing requirements" do
     get "/api/v1/admin/staffing_requirements", headers: auth_headers
 

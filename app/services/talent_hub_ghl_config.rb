@@ -5,7 +5,7 @@ class TalentHubGhlConfig
   MissingConfigError = Class.new(StandardError)
 
   def self.api_key
-    ENV[API_KEY_ENV].presence
+    ENV[API_KEY_ENV].presence || GhlAgencyConfig.api_key
   end
 
   def self.location_id
@@ -18,7 +18,7 @@ class TalentHubGhlConfig
 
   def self.require_config!
     missing = []
-    missing << API_KEY_ENV if api_key.blank?
+    missing << "#{API_KEY_ENV} or #{GhlAgencyConfig::AGENCY_API_KEY_ENV}" if api_key.blank?
     missing << LOCATION_ID_ENV if location_id.blank?
 
     return true if missing.empty?

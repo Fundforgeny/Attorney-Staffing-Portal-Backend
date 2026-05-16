@@ -142,3 +142,17 @@ The Build 1 endpoint was run locally with a safe customer contact type change pa
 | Contact type | Persisted `contact_type_change.new_contact_type = customer` in canonical case custom data. |
 
 The local payload file used for this sandbox run was temporary (`tmp_client_workflow_payload.json`) and should not be committed. Future live runs should call the same endpoint from the Titans Law workflow using the runtime secret `TITANS_CLIENT_WORKFLOW_API_TOKEN` and real workflow merge fields.
+
+## Connector Layer: Clio Preview and Agency-Level GHL Access
+
+The connector layer now has a safe foundation for **Clio matter sync previews** and **agency-level GoHighLevel credential resolution**. Live writes remain intentionally gated until runtime secrets and payload approval rules are confirmed, but staff/admin users can now preview what the Clio sync service would attempt before any external Clio mutation occurs.
+
+| Area | Implementation detail |
+| --- | --- |
+| Agency GHL key | `GhlAgencyConfig` reads `GHL_AGENCY_API_KEY`, `GHL_DEFAULT_LOCATION_ID`, and optional `TITANS_LAW_GHL_LOCATION_ID`. This supports the user preference to move away from fragile OAuth behavior and toward an agency/private integration key pattern for reliable multi-location access. |
+| Talent Hub fallback | `TalentHubGhlConfig` still requires `TITANS_LAW_TALENT_HUB_LOCATION_ID`, but it can now use `GHL_AGENCY_API_KEY` when a separate `TITANS_LAW_TALENT_HUB_GHL_API_KEY` is not present. This keeps the Talent Hub location separate while centralizing credentials. |
+| Clio runtime token | `ClioConfig` reads `CLIO_ACCESS_TOKEN` and optional `CLIO_API_BASE_URL`, defaulting to `https://app.clio.com/api/v4`. Raw Clio tokens must stay in the approved runtime secret store, never in repo files. |
+| Clio dry-run service | `ClioMatterSyncService#dry_run` builds deterministic operations for client contact, matter, note, related contacts, and tasks from canonical `Case`, `CaseIntake`, `RelatedParty`, and `CaseTask` records. |
+| Admin preview endpoint | `POST /api/v1/admin/cases/:id/clio_sync_preview` returns the Clio operation packet for review. It does not write to Clio. |
+
+The next connector step is to verify the exact Clio field/custom-field payloads in a sandbox or approved live test matter, then replace the live-write gate in `ClioMatterSyncService#sync!` with idempotent API calls and `ExternalSyncRecord` updates. GHL outbound writes should use `GhlAgencyConfig.ghl_service(location_id: ...)` for client/Titans Law locations and `TalentHubGhlConfig.ghl_service` for Talent Hub operations.

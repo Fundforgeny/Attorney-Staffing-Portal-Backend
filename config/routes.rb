@@ -100,7 +100,9 @@ Rails.application.routes.draw do
         resources :users, only: [:index, :show]
 
         # Staffing / matter management
-        resources :cases, only: [:index, :show]
+        resources :cases, only: [:index, :show] do
+          post :clio_sync_preview, on: :member
+        end
         resources :staffing_requirements, only: [:index, :show]
 
         # Admin Users
