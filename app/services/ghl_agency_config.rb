@@ -5,7 +5,7 @@ class GhlAgencyConfig
   MissingConfigError = Class.new(StandardError)
 
   def self.api_key
-    ENV[AGENCY_API_KEY_ENV].presence
+    ENV[AGENCY_API_KEY_ENV].presence || GoogleSecretManagerSecret.fetch(AGENCY_API_KEY_ENV)
   end
 
   def self.titans_law_location_id

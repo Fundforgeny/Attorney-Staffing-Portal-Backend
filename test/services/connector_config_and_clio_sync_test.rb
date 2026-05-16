@@ -17,14 +17,23 @@ class ConnectorConfigAndClioSyncTest < ActiveSupport::TestCase
     restore_env(ClioConfig::ACCESS_TOKEN_ENV, @original_clio_token)
   end
 
-  test "agency GHL config uses agency key and explicit firm location" do
+  test "agency GHL config uses env key and explicit firm location" do
     ENV[GhlAgencyConfig::AGENCY_API_KEY_ENV] = "agency-token"
+    GoogleSecretManagerSecret.expects(:fetch).never
 
     assert_not GhlAgencyConfig.configured?
     assert GhlAgencyConfig.configured?(location_id: "custom-location")
     assert_raises(GhlAgencyConfig::MissingConfigError) { GhlAgencyConfig.require_config! }
     assert_nothing_raised { GhlAgencyConfig.require_config!(location_id: "custom-location") }
     assert_instance_of GhlService, GhlAgencyConfig.ghl_service(location_id: "custom-location")
+  end
+
+  test "agency GHL config can fall back to Google Secret Manager" do
+    ENV.delete(GhlAgencyConfig::AGENCY_API_KEY_ENV)
+    GoogleSecretManagerSecret.expects(:fetch).with(GhlAgencyConfig::AGENCY_API_KEY_ENV).returns("secret-manager-token").at_least_once
+
+    assert_equal "secret-manager-token", GhlAgencyConfig.api_key
+    assert GhlAgencyConfig.configured?(location_id: "custom-location")
   end
 
   test "agency GHL config resolves service from firm location id" do

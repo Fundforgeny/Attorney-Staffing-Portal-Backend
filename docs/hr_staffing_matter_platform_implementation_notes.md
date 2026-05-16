@@ -173,3 +173,16 @@ A live run was requested to pull recent contacts from the Titans Law sub-account
 | Safe run status | Blocked until a rotated agency key is entered directly into the approved secret store as `GHL_AGENCY_API_KEY`. |
 
 The agency key pasted in chat must be treated as exposed and should not be used for live pulls. Rotate it, enter the replacement directly into the approved runtime secret store, and then rerun the recent-customer pull using `GhlAgencyConfig.ghl_service_for_firm(titans_law_firm)`.
+
+## Google Secret Manager Fallback for GHL Agency Key
+
+The backend now supports an optional Google Cloud Secret Manager fallback for `GHL_AGENCY_API_KEY`. The lookup order is intentionally **environment first, Secret Manager second** so local/test/runtime environments can still inject secrets directly when preferred.
+
+| Configuration | Purpose |
+| --- | --- |
+| `GHL_AGENCY_API_KEY` | Preferred direct runtime env var for the agency-level GHL credential. |
+| Secret Manager secret `GHL_AGENCY_API_KEY` | Optional fallback when the app has Google Cloud metadata-server credentials or `GOOGLE_OAUTH_ACCESS_TOKEN`. |
+| `GHL_AGENCY_API_KEY_SECRET_PROJECT` | Optional project override for the `GHL_AGENCY_API_KEY` secret. Use this if the secret lives in a different project than the app runtime. |
+| `GOOGLE_CLOUD_PROJECT` or `GCP_PROJECT` | Global Google Cloud project fallback used by the Secret Manager loader. |
+
+The Secret Manager loader does not log secret values. If secret access is unavailable, it returns `nil` and the existing missing-config errors remain in place. To use the Secret Manager path in production, the runtime service account must have permission to access `projects/933393718181/secrets/GHL_AGENCY_API_KEY/versions/latest` or the equivalent project/secret resource configured through the environment variables above.
