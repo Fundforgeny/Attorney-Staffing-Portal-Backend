@@ -3,7 +3,6 @@ require "test_helper"
 class ConnectorConfigAndClioSyncTest < ActiveSupport::TestCase
   setup do
     @original_agency_key = ENV[GhlAgencyConfig::AGENCY_API_KEY_ENV]
-    @original_default_location = ENV[GhlAgencyConfig::DEFAULT_LOCATION_ID_ENV]
     @original_titans_location = ENV[GhlAgencyConfig::TITANS_LAW_LOCATION_ID_ENV]
     @original_talent_key = ENV[TalentHubGhlConfig::API_KEY_ENV]
     @original_talent_location = ENV[TalentHubGhlConfig::LOCATION_ID_ENV]
@@ -12,20 +11,28 @@ class ConnectorConfigAndClioSyncTest < ActiveSupport::TestCase
 
   teardown do
     restore_env(GhlAgencyConfig::AGENCY_API_KEY_ENV, @original_agency_key)
-    restore_env(GhlAgencyConfig::DEFAULT_LOCATION_ID_ENV, @original_default_location)
     restore_env(GhlAgencyConfig::TITANS_LAW_LOCATION_ID_ENV, @original_titans_location)
     restore_env(TalentHubGhlConfig::API_KEY_ENV, @original_talent_key)
     restore_env(TalentHubGhlConfig::LOCATION_ID_ENV, @original_talent_location)
     restore_env(ClioConfig::ACCESS_TOKEN_ENV, @original_clio_token)
   end
 
-  test "agency GHL config uses agency key and explicit location" do
+  test "agency GHL config uses agency key and explicit firm location" do
     ENV[GhlAgencyConfig::AGENCY_API_KEY_ENV] = "agency-token"
-    ENV[GhlAgencyConfig::DEFAULT_LOCATION_ID_ENV] = "default-location"
 
-    assert GhlAgencyConfig.configured?
-    assert_nothing_raised { GhlAgencyConfig.require_config! }
+    assert_not GhlAgencyConfig.configured?
+    assert GhlAgencyConfig.configured?(location_id: "custom-location")
+    assert_raises(GhlAgencyConfig::MissingConfigError) { GhlAgencyConfig.require_config! }
+    assert_nothing_raised { GhlAgencyConfig.require_config!(location_id: "custom-location") }
     assert_instance_of GhlService, GhlAgencyConfig.ghl_service(location_id: "custom-location")
+  end
+
+  test "agency GHL config resolves service from firm location id" do
+    ENV[GhlAgencyConfig::AGENCY_API_KEY_ENV] = "agency-token"
+    firm = Firm.create!(name: "Firm With GHL Location", location_id: "firm-location-123")
+
+    assert_equal "firm-location-123", GhlAgencyConfig.location_id_for_firm(firm)
+    assert_instance_of GhlService, GhlAgencyConfig.ghl_service_for_firm(firm)
   end
 
   test "Talent Hub config can fall back to agency key while keeping Talent Hub location separate" do
